@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import './App.css';
 
 // --- COMPONENTS ---
@@ -45,34 +45,181 @@ export default function App() {
   const [purchaseInvoiceHistory, setPurchaseInvoiceHistory] = useState([]);
   const [receiptHistory, setReceiptHistory] = useState([]);
   const [vendors, setVendors] = useState([]);
-  
-  // New State for Employees
   const [employees, setEmployees] = useState([]);
 
-  useEffect(() => {
-    loadProducts();
-    loadCustomers();
-    loadInvoices();
-    loadPurchaseInvoices();
-    loadHistory();
-    loadReceipts();
-    loadVendors();
-    loadEmployees();
-  }, []);
-  
-  function loadEmployees() { employeeService.getEmployees().then(data => setEmployees(data || [])); }
-  function loadVendors() { vendorService.getVendors().then(data => setVendors(data || [])); }
-  function loadProducts() { productService.getProducts().then(data => setProducts(Array.isArray(data) ? data : [])); }
-  function loadCustomers() { customerService.getCustomers().then(data => setCustomers(Array.isArray(data) ? data : [])); }
-  function loadInvoices() { invoiceService.getInvoices().then(data => setInvoices((data || []).sort((a, b) => b.id - a.id))); }
-  function loadPurchaseInvoices() { purchaseInvoiceService.getPurchaseInvoices().then(data => setPurchaseInvoices((data || []).sort((a, b) => new Date(b.purchaseDate) - new Date(a.purchaseDate)))); }
-  function loadReceipts() { receiptService.getReceipts().then(data => setReceipts(Array.isArray(data) ? data : [])); }
-  function loadHistory() {
+  // --- SMART CACHE TRACKER ---
+  // Remembers what is already in browser memory so switching tabs doesn't re-fetch!
+  const loadedCache = useRef({
+    products: false,
+    customers: false,
+    invoices: false,
+    purchaseInvoices: false,
+    receipts: false,
+    vendors: false,
+    employees: false,
+    inventoryHistory: false,
+    invoiceHistory: false,
+    purchaseInvoiceHistory: false,
+    receiptHistory: false
+  });
+
+  // --- DIRECT LOADERS (Called when child components Add/Edit/Delete data to force a fresh sync) ---
+  function loadEmployees() {
+    loadedCache.current.employees = true;
+    employeeService.getEmployees().then(data => setEmployees(Array.isArray(data) ? data : []));
+  }
+  function loadVendors() {
+    loadedCache.current.vendors = true;
+    vendorService.getVendors().then(data => setVendors(Array.isArray(data) ? data : []));
+  }
+  function loadProducts() {
+    loadedCache.current.products = true;
+    productService.getProducts().then(data => setProducts(Array.isArray(data) ? data : []));
+  }
+  function loadCustomers() {
+    loadedCache.current.customers = true;
+    customerService.getCustomers().then(data => setCustomers(Array.isArray(data) ? data : []));
+  }
+  function loadInvoices() {
+    loadedCache.current.invoices = true;
+    invoiceService.getInvoices().then(data => setInvoices((data || []).sort((a, b) => b.id - a.id)));
+  }
+  function loadPurchaseInvoices() {
+    loadedCache.current.purchaseInvoices = true;
+    purchaseInvoiceService.getPurchaseInvoices().then(data => setPurchaseInvoices((data || []).sort((a, b) => new Date(b.purchaseDate) - new Date(a.purchaseDate))));
+  }
+  function loadReceipts() {
+    loadedCache.current.receipts = true;
+    receiptService.getReceipts().then(data => setReceipts(Array.isArray(data) ? data : []));
+  }
+  function loadInventoryHistory() {
+    loadedCache.current.inventoryHistory = true;
     historyService.getInventoryHistory().then(data => setInventoryHistory(Array.isArray(data) ? data : []));
+  }
+  function loadInvoiceHistory() {
+    loadedCache.current.invoiceHistory = true;
     historyService.getInvoiceHistory().then(data => setInvoiceHistory(Array.isArray(data) ? data : []));
+  }
+  function loadPurchaseInvoiceHistory() {
+    loadedCache.current.purchaseInvoiceHistory = true;
     historyService.getPurchaseInvoiceHistory().then(data => setPurchaseInvoiceHistory(Array.isArray(data) ? data : []));
+  }
+  function loadReceiptHistory() {
+    loadedCache.current.receiptHistory = true;
     historyService.getReceiptHistory().then(data => setReceiptHistory(Array.isArray(data) ? data : []));
   }
+
+  function loadHistory() {
+    loadInventoryHistory();
+    loadInvoiceHistory();
+    loadPurchaseInvoiceHistory();
+    loadReceiptHistory();
+  }
+
+  // --- CACHE-AWARE HELPER (Only fetches if not already in browser memory) ---
+  const ensureLoaded = (key, loaderFn) => {
+    if (!loadedCache.current[key]) {
+      loaderFn();
+    }
+  };
+
+  // --- ON-DEMAND CACHED VIEW ENGINE ---
+  useEffect(() => {
+    if (!isLoggedIn) return;
+
+    switch (view) {
+      case 'home':
+        ensureLoaded('invoices', loadInvoices);
+        break;
+
+      case 'products':
+      case 'inventory':
+        ensureLoaded('products', loadProducts);
+        break;
+
+      case 'inventory-history':
+        ensureLoaded('products', loadProducts);
+        ensureLoaded('inventoryHistory', loadInventoryHistory);
+        break;
+
+      case 'customers-manage':
+        ensureLoaded('customers', loadCustomers);
+        break;
+
+      case 'vendors-manage':
+        ensureLoaded('vendors', loadVendors);
+        break;
+
+      case 'employees-manage':
+        ensureLoaded('employees', loadEmployees);
+        break;
+
+      case 'ledgers':
+      case 'ledger-statement':
+      case 'receipts':
+      case 'receipts-list':
+        ensureLoaded('customers', loadCustomers);
+        ensureLoaded('invoices', loadInvoices);
+        ensureLoaded('receipts', loadReceipts);
+        break;
+
+      case 'receipt-edit-history':
+      case 'receipt-edit-compare':
+        ensureLoaded('receiptHistory', loadReceiptHistory);
+        break;
+
+      case 'list':
+      case 'payment-screen':
+      case 'invoices':
+      case 'invoice-details':
+      case 'return-sale':
+      case 'drafts-list':
+        ensureLoaded('products', loadProducts);
+        ensureLoaded('customers', loadCustomers);
+        ensureLoaded('invoices', loadInvoices);
+        break;
+
+      case 'edit-history':
+      case 'sale-edit-compare':
+        ensureLoaded('invoiceHistory', loadInvoiceHistory);
+        break;
+
+      case 'purchase-new':
+      case 'purchase-summary-screen':
+      case 'purchases-list':
+      case 'purchase-invoice-details':
+        ensureLoaded('products', loadProducts);
+        ensureLoaded('vendors', loadVendors);
+        ensureLoaded('purchaseInvoices', loadPurchaseInvoices);
+        break;
+
+      case 'purchase-edit-history':
+      case 'purchase-edit-compare':
+        ensureLoaded('purchaseInvoiceHistory', loadPurchaseInvoiceHistory);
+        break;
+
+      case 'collections':
+        ensureLoaded('customers', loadCustomers);
+        ensureLoaded('invoices', loadInvoices);
+        break;
+
+      case 'data-transfer':
+        ensureLoaded('customers', loadCustomers);
+        ensureLoaded('products', loadProducts);
+        break;
+
+      case 'reports':
+        ensureLoaded('invoices', loadInvoices);
+        ensureLoaded('purchaseInvoices', loadPurchaseInvoices);
+        ensureLoaded('products', loadProducts);
+        ensureLoaded('customers', loadCustomers);
+        ensureLoaded('vendors', loadVendors);
+        break;
+
+      default:
+        break;
+    }
+  }, [view, isLoggedIn]);
 
   const salesStats = useMemo(() => {
     const dailyMap = {}; const weeklyMap = {}; const monthlyMap = {}; const yearlyMap = {};
@@ -117,7 +264,12 @@ export default function App() {
         view={view} 
         setView={setView} 
         draftsCount={JSON.parse(localStorage.getItem('salesDrafts'))?.length || 0} 
-        onLogout={() => { setIsLoggedIn(false); setUsername(''); setPassword(''); setView('home'); }} 
+        onLogout={() => { 
+          setIsLoggedIn(false); 
+          setUsername(''); 
+          setPassword(''); 
+          setView('home'); 
+        }} 
       />
 
       <main className="main-content">
@@ -125,10 +277,10 @@ export default function App() {
           <Dashboard salesStats={salesStats} invoices={invoices} setView={setView} />
         )}
         {['products'].includes(view) && (
-          <ProductsManager products={products} loadProducts={loadProducts} loadHistory={loadHistory} />
+          <ProductsManager products={products} loadProducts={loadProducts} loadHistory={loadInventoryHistory} />
         )}
         {['inventory', 'inventory-history'].includes(view) && (
-          <InventoryManager view={view} products={products} inventoryHistory={inventoryHistory} loadProducts={loadProducts} loadHistory={loadHistory} />
+          <InventoryManager view={view} products={products} inventoryHistory={inventoryHistory} loadProducts={loadProducts} loadHistory={loadInventoryHistory} />
         )}
         {['customers-manage'].includes(view) && (
           <CustomerManager customers={customers} loadCustomers={loadCustomers} />
@@ -137,13 +289,13 @@ export default function App() {
           <LedgerManager view={view} setView={setView} customers={customers} invoices={invoices} receipts={receipts} />
         )}
         {['list', 'payment-screen', 'invoices', 'invoice-details', 'return-sale', 'edit-history', 'sale-edit-compare', 'drafts-list'].includes(view) && (
-          <SalesManager view={view} setView={setView} products={products} customers={customers} invoices={invoices} invoiceHistory={invoiceHistory} loadProducts={loadProducts} loadInvoices={loadInvoices} loadHistory={loadHistory} loadCustomers={loadCustomers} />
+          <SalesManager view={view} setView={setView} products={products} customers={customers} invoices={invoices} invoiceHistory={invoiceHistory} loadProducts={loadProducts} loadInvoices={loadInvoices} loadHistory={loadInvoiceHistory} loadCustomers={loadCustomers} />
         )}
         {['purchase-new', 'purchase-summary-screen', 'purchases-list', 'purchase-invoice-details', 'purchase-edit-history', 'purchase-edit-compare'].includes(view) && (
-          <PurchaseManager view={view} setView={setView} products={products} purchaseInvoices={purchaseInvoices} purchaseInvoiceHistory={purchaseInvoiceHistory} vendors={vendors} loadProducts={loadProducts} loadPurchaseInvoices={loadPurchaseInvoices} loadHistory={loadHistory} />
+          <PurchaseManager view={view} setView={setView} products={products} purchaseInvoices={purchaseInvoices} purchaseInvoiceHistory={purchaseInvoiceHistory} vendors={vendors} loadProducts={loadProducts} loadPurchaseInvoices={loadPurchaseInvoices} loadHistory={loadPurchaseInvoiceHistory} />
         )}
         {['receipts', 'receipts-list', 'receipt-edit-history', 'receipt-edit-compare'].includes(view) && (
-          <ReceiptManager view={view} setView={setView} customers={customers} invoices={invoices} receipts={receipts} receiptHistory={receiptHistory} loadCustomers={loadCustomers} loadReceipts={loadReceipts} loadHistory={loadHistory} />
+          <ReceiptManager view={view} setView={setView} customers={customers} invoices={invoices} receipts={receipts} receiptHistory={receiptHistory} loadCustomers={loadCustomers} loadReceipts={loadReceipts} loadHistory={loadReceiptHistory} />
         )}
         {view === 'data-transfer' && (
           <DataTransfer customers={customers} products={products} loadCustomers={loadCustomers} loadProducts={loadProducts} loadHistory={loadHistory} />

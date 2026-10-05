@@ -332,3 +332,45 @@ export const employeeService = {
       if (!res.ok) throw new Error('Failed to delete employee')
     }),
 }
+
+export const backupService = {
+  downloadSqlBackup: async () => {
+    const response = await fetch(`${API_URL}/api/backup/download`);
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(errText || 'Failed to generate SQL backup from server.');
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+
+    const now = new Date();
+    const datePart = now.toLocaleDateString('en-GB').replace(/\//g, '-');
+    const timePart = `${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}`;
+    const filename = `RetailerApp_Backup_${datePart}_${timePart}.sql`;
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  },
+
+  restoreSqlBackup: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${API_URL}/api/backup/restore`, {
+      method: 'POST',
+      body: formData
+    });
+
+    const message = await response.text();
+    if (!response.ok) {
+      throw new Error(message || 'Database restore failed.');
+    }
+    return message;
+  }
+}
