@@ -9,6 +9,7 @@ import jakarta.persistence.Id;
 
 @Entity
 public class ReceiptHistory {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -34,7 +35,7 @@ public class ReceiptHistory {
     public void setEditDate(LocalDateTime editDate) { this.editDate = editDate; }
     public Double getOldAmount() { return oldAmount; }
     public void setOldAmount(Double oldAmount) { this.oldAmount = oldAmount; }
-    public Double getOldDiscount() { return oldAmount; } // Fixed getter
+    public Double getOldDiscount() { return oldDiscount; }
     public void setOldDiscount(Double oldDiscount) { this.oldDiscount = oldDiscount; }
     public Double getNewAmount() { return newAmount; }
     public void setNewAmount(Double newAmount) { this.newAmount = newAmount; }

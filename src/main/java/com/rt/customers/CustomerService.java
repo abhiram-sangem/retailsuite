@@ -27,7 +27,10 @@ public class CustomerService {
     }
 
     public CustomerResponse createCustomer(CreateCustomerRequest request) {
-        validateCustomerName(request == null ? null : request.name());
+        if (request == null) {
+            throw new RuntimeException("Customer name is required");
+        }
+        validateCustomerName(request.name());
 
         Customer customer = new Customer();
         customer.setName(request.name().trim());
@@ -36,6 +39,7 @@ public class CustomerService {
         customer.setCity(request.city());
         customer.setLocation(request.location());
         customer.setState(request.state());
+        customer.setBalance(request.balance());
 
         return toResponse(customerRepository.save(customer));
     }
@@ -95,7 +99,9 @@ public class CustomerService {
         if (customerDetails.state() != null) {
             customer.setState(customerDetails.state());
         }
-
+        if (customerDetails.balance() != 0) {
+            customer.setBalance(customerDetails.balance());
+        }
         return toResponse(customerRepository.save(customer));
     }
 

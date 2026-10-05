@@ -1,14 +1,17 @@
 package com.rt.inventory;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import com.rt.InventoryLog;
-import com.rt.InventoryLogRepository;
+import com.rt.history.InventoryHistory;
+import com.rt.history.InventoryHistoryRepository;
 import com.rt.inventory.dto.CreateProductRequest;
+import com.rt.inventory.dto.ProductImportRequest;
 import com.rt.inventory.dto.ProductResponse;
 import com.rt.inventory.dto.UpdateProductRequest;
 
@@ -16,19 +19,21 @@ import com.rt.inventory.dto.UpdateProductRequest;
 public class ProductService {
 
     private final ProductRepository productRepository;
-    private final InventoryLogRepository inventoryLogRepository;
+    private final InventoryHistoryRepository inventoryHistoryRepository;
 
-    public ProductService(ProductRepository productRepository, InventoryLogRepository inventoryLogRepository) {
+    public ProductService(ProductRepository productRepository, InventoryHistoryRepository inventoryHistoryRepository) {
         this.productRepository = productRepository;
-        this.inventoryLogRepository = inventoryLogRepository;
+        this.inventoryHistoryRepository = inventoryHistoryRepository;
     }
 
+    @Transactional(readOnly = true)
     public List<ProductResponse> getAllProducts() {
         return productRepository.findAll().stream()
                 .map(this::toResponse)
                 .collect(Collectors.toList());
     }
 
+    @Transactional
     public ProductResponse createProduct(CreateProductRequest request) {
         if (request == null || request.name() == null || request.name().trim().isEmpty()) {
             throw new RuntimeException("Product name is required");
@@ -49,17 +54,12 @@ public class ProductService {
 
         Product saved = productRepository.save(product);
 
-        inventoryLogRepository.save(new InventoryLog(
-                saved.getId(),
-                saved.getName(),
-                "NEW_PRODUCT",
-                saved.getStock(),
-                saved.getStock(),
-                "Initial Stock Entry"));
+        saveInventoryLog(saved.getId(), saved.getName(), "NEW_PRODUCT", saved.getStock(), saved.getStock(), "Initial Stock Entry");
 
         return toResponse(saved);
     }
 
+    @Transactional
     public ProductResponse updateProduct(Long id, UpdateProductRequest details) {
         Product product = productRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Product not found with id: " + id));
@@ -67,68 +67,54 @@ public class ProductService {
         Double oldStock = product.getStock() == null ? 0.0 : product.getStock();
         Double newStock = details.stock() == null ? oldStock : details.stock();
 
-        if (details.name() != null && !details.name().trim().isEmpty()) {
-            product.setName(details.name().trim());
-        }
-        if (details.hsnCode() != null) {
-            product.setHsnCode(details.hsnCode());
-        }
-        if (details.purchasePrice() != null) {
-            product.setPurchasePrice(details.purchasePrice());
-        }
-        if (details.mrp() != null) {
-            product.setMrp(details.mrp());
-        }
-        if (details.price() != null) {
-            product.setPrice(details.price());
-        }
-        if (details.stock() != null) {
-            product.setStock(details.stock());
-        }
-        if (details.piecesPerBox() != null) {
-            product.setPiecesPerBox(details.piecesPerBox());
-        }
-        if (details.piecePurchasePrice() != null) {
-            product.setPiecePurchasePrice(details.piecePurchasePrice());
-        }
-        if (details.pieceMrp() != null) {
-            product.setPieceMrp(details.pieceMrp());
-        }
-        if (details.piecePrice() != null) {
-            product.setPiecePrice(details.piecePrice());
-        }
-        if (details.barcode() != null) {
-            product.setBarcode(details.barcode());
-        }
+        if (details.name() != null && !details.name().trim().isEmpty()) product.setName(details.name().trim());
+        if (details.hsnCode() != null) product.setHsnCode(details.hsnCode());
+        if (details.purchasePrice() != null) product.setPurchasePrice(details.purchasePrice());
+        if (details.mrp() != null) product.setMrp(details.mrp());
+        if (details.price() != null) product.setPrice(details.price());
+        if (details.stock() != null) product.setStock(details.stock());
+        if (details.piecesPerBox() != null) product.setPiecesPerBox(details.piecesPerBox());
+        if (details.piecePurchasePrice() != null) product.setPiecePurchasePrice(details.piecePurchasePrice());
+        if (details.pieceMrp() != null) product.setPieceMrp(details.pieceMrp());
+        if (details.piecePrice() != null) product.setPiecePrice(details.piecePrice());
+        if (details.barcode() != null) product.setBarcode(details.barcode());
 
         Product saved = productRepository.save(product);
 
         if (!oldStock.equals(newStock)) {
-            inventoryLogRepository.save(new InventoryLog(
-                    saved.getId(),
-                    saved.getName(),
-                    "MANUAL_UPDATE",
-                    newStock - oldStock,
-                    newStock,
-                    "Manual Edit via Products View"));
+            saveInventoryLog(saved.getId(), saved.getName(), "MANUAL_UPDATE", newStock - oldStock, newStock, "Manual Edit via Products View");
         }
 
         return toResponse(saved);
     }
 
-    public List<ProductResponse> createProductsBulk(List<CreateProductRequest> products) {
+    @Transactional
+    public List<ProductResponse> createProductsBulk(List<ProductImportRequest> products) {
         List<ProductResponse> savedProducts = new ArrayList<>();
 
-        for (CreateProductRequest p : products) {
+        for (ProductImportRequest p : products) {
             if (p == null || p.name() == null || p.name().trim().isEmpty()) {
                 continue;
             }
 
-            Product existing = productRepository.findFirstByName(p.name().trim()).orElse(null);
+            Product existing = null;
+            if (p.id() != null) {
+                existing = productRepository.findById(p.id()).orElse(null);
+            }
+            if (existing == null) {
+                existing = productRepository.findFirstByName(p.name().trim()).orElse(null);
+            }
 
             if (existing != null) {
+                Double oldStock = existing.getStock() == null ? 0.0 : existing.getStock();
                 Product updated = mergeIntoExisting(existing, p);
-                savedProducts.add(toResponse(productRepository.save(updated)));
+                Product saved = productRepository.save(updated);
+                savedProducts.add(toResponse(saved));
+
+                Double newStock = saved.getStock() == null ? 0.0 : saved.getStock();
+                if (!oldStock.equals(newStock)) {
+                    saveInventoryLog(saved.getId(), saved.getName(), "BULK_UPDATE", newStock - oldStock, newStock, "Updated via Excel Import");
+                }
             } else {
                 Product created = new Product();
                 created.setName(p.name().trim());
@@ -145,19 +131,14 @@ public class ProductService {
 
                 Product saved = productRepository.save(created);
                 savedProducts.add(toResponse(saved));
-                inventoryLogRepository.save(new InventoryLog(
-                        saved.getId(),
-                        saved.getName(),
-                        "BULK_IMPORT",
-                        saved.getStock(),
-                        saved.getStock(),
-                        "Imported via Excel"));
+                saveInventoryLog(saved.getId(), saved.getName(), "BULK_IMPORT", saved.getStock(), saved.getStock(), "Imported via Excel");
             }
         }
 
         return savedProducts;
     }
 
+    @Transactional
     public void deleteProduct(Long id) {
         if (!productRepository.existsById(id)) {
             throw new RuntimeException("Product not found with id: " + id);
@@ -165,38 +146,30 @@ public class ProductService {
         productRepository.deleteById(id);
     }
 
-    private Product mergeIntoExisting(Product existing, CreateProductRequest incoming) {
-        if (incoming.hsnCode() != null && !incoming.hsnCode().isEmpty()) {
-            existing.setHsnCode(incoming.hsnCode());
-        }
-        if (incoming.purchasePrice() != null) {
-            existing.setPurchasePrice(incoming.purchasePrice());
-        }
-        if (incoming.mrp() != null) {
-            existing.setMrp(incoming.mrp());
-        }
-        if (incoming.price() != null) {
-            existing.setPrice(incoming.price());
-        }
-        if (incoming.stock() != null) {
-            existing.setStock(incoming.stock());
-        }
-        if (incoming.piecesPerBox() != null) {
-            existing.setPiecesPerBox(incoming.piecesPerBox());
-        }
-        if (incoming.piecePurchasePrice() != null) {
-            existing.setPiecePurchasePrice(incoming.piecePurchasePrice());
-        }
-        if (incoming.pieceMrp() != null) {
-            existing.setPieceMrp(incoming.pieceMrp());
-        }
-        if (incoming.piecePrice() != null) {
-            existing.setPiecePrice(incoming.piecePrice());
-        }
-        if (incoming.barcode() != null && !incoming.barcode().isEmpty()) {
-            existing.setBarcode(incoming.barcode());
-        }
+    private void saveInventoryLog(Long productId, String productName, String actionType, Double qtyChanged, Double finalStock, String desc) {
+        InventoryHistory log = new InventoryHistory();
+        log.setProductId(productId);
+        log.setProductName(productName);
+        log.setActionType(actionType);
+        log.setQuantityChanged(qtyChanged);
+        log.setFinalStock(finalStock);
+        log.setDescription(desc);
+        log.setTimestamp(LocalDateTime.now());
+        inventoryHistoryRepository.save(log);
+    }
 
+    private Product mergeIntoExisting(Product existing, ProductImportRequest incoming) {
+        if (incoming.name() != null && !incoming.name().trim().isEmpty()) existing.setName(incoming.name().trim());
+        if (incoming.hsnCode() != null && !incoming.hsnCode().isEmpty()) existing.setHsnCode(incoming.hsnCode());
+        if (incoming.purchasePrice() != null) existing.setPurchasePrice(incoming.purchasePrice());
+        if (incoming.mrp() != null) existing.setMrp(incoming.mrp());
+        if (incoming.price() != null) existing.setPrice(incoming.price());
+        if (incoming.stock() != null) existing.setStock(incoming.stock());
+        if (incoming.piecesPerBox() != null) existing.setPiecesPerBox(incoming.piecesPerBox());
+        if (incoming.piecePurchasePrice() != null) existing.setPiecePurchasePrice(incoming.piecePurchasePrice());
+        if (incoming.pieceMrp() != null) existing.setPieceMrp(incoming.pieceMrp());
+        if (incoming.piecePrice() != null) existing.setPiecePrice(incoming.piecePrice());
+        if (incoming.barcode() != null && !incoming.barcode().isEmpty()) existing.setBarcode(incoming.barcode());
         return existing;
     }
 

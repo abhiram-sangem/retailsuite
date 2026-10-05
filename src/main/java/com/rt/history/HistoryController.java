@@ -2,47 +2,45 @@ package com.rt.history;
 
 import java.util.List;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.rt.history.dto.InventoryHistoryResponse;
+import com.rt.history.dto.InvoiceHistoryResponse;
+import com.rt.history.dto.PurchaseInvoiceHistoryResponse;
+import com.rt.history.dto.ReceiptHistoryResponse;
+
 @RestController
 @RequestMapping("/api/history")
 @CrossOrigin(origins = "*")
 public class HistoryController {
 
-    @Autowired
-    private InventoryHistoryRepository inventoryHistoryRepository;
+    private final HistoryService historyService;
 
-    @Autowired
-    private InvoiceHistoryRepository invoiceHistoryRepository;
-
-    @Autowired
-    private PurchaseInvoiceHistoryRepository purchaseInvoiceHistoryRepository;
-
-    @Autowired
-    private ReceiptHistoryRepository receiptHistoryRepository;
+    public HistoryController(HistoryService historyService) {
+        this.historyService = historyService;
+    }
 
     @GetMapping("/inventory")
-    public ResponseEntity<List<InventoryHistory>> getInventoryHistory() {
-        return ResponseEntity.ok(inventoryHistoryRepository.findAllByOrderByTimestampDesc());
+    public ResponseEntity<List<InventoryHistoryResponse>> getInventoryHistory() {
+        return ResponseEntity.ok(historyService.getInventoryHistory());
     }
 
     @GetMapping("/invoices")
-    public ResponseEntity<List<InvoiceHistory>> getInvoiceHistory() {
-        return ResponseEntity.ok(invoiceHistoryRepository.findAllByOrderByEditDateDesc());
+    public ResponseEntity<List<InvoiceHistoryResponse>> getInvoiceHistory() {
+        return ResponseEntity.ok(historyService.getInvoiceHistory());
     }
 
     @GetMapping("/purchase-invoices")
-    public ResponseEntity<List<PurchaseInvoiceHistory>> getPurchaseInvoiceHistory() {
-        return ResponseEntity.ok(purchaseInvoiceHistoryRepository.findAllByOrderByEditDateDesc());
+    public ResponseEntity<List<PurchaseInvoiceHistoryResponse>> getPurchaseInvoiceHistory() {
+        return ResponseEntity.ok(historyService.getPurchaseInvoiceHistory());
     }
 
     @GetMapping("/receipts")
-    public ResponseEntity<List<ReceiptHistory>> getReceiptHistory() {
-        return ResponseEntity.ok(receiptHistoryRepository.findAllByOrderByEditDateDesc());
+    public ResponseEntity<List<ReceiptHistoryResponse>> getReceiptHistory() {
+        return ResponseEntity.ok(historyService.getReceiptHistory());
     }
 }

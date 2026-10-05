@@ -6,5 +6,6 @@ public record CreateCustomerRequest(
         String mobile,
         String city,
         String location,
+        double balance,
         String state) {
 }
