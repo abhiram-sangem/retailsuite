@@ -14,7 +14,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.rt.inventory.dto.CreateProductRequest;
-import com.rt.inventory.dto.ProductImportRequest;
 import com.rt.inventory.dto.ProductResponse;
 import com.rt.inventory.dto.UpdateProductRequest;
 
@@ -44,7 +43,7 @@ public class ProductController {
     }
 
     @PostMapping("/bulk")
-    public ResponseEntity<List<ProductResponse>> addProductsBulk(@RequestBody List<ProductImportRequest> products) {
+    public ResponseEntity<List<ProductResponse>> addProductsBulk(@RequestBody List<?> products) {
         return ResponseEntity.ok(productService.createProductsBulk(products));
     }
 

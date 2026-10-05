@@ -6,6 +6,6 @@ public record UpdateCustomerRequest(
         String mobile,
         String city,
         String location,
-        double balance,
+        Double balance,
         String state) {
 }

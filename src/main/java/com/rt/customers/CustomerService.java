@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.rt.customers.dto.CreateCustomerRequest;
 import com.rt.customers.dto.CustomerImportRequest;
@@ -20,12 +21,14 @@ public class CustomerService {
         this.customerRepository = customerRepository;
     }
 
+    @Transactional(readOnly = true)
     public List<CustomerResponse> getAllCustomers() {
         return customerRepository.findAll().stream()
                 .map(this::toResponse)
                 .collect(Collectors.toList());
     }
 
+    @Transactional
     public CustomerResponse createCustomer(CreateCustomerRequest request) {
         if (request == null) {
             throw new RuntimeException("Customer name is required");
@@ -39,20 +42,17 @@ public class CustomerService {
         customer.setCity(request.city());
         customer.setLocation(request.location());
         customer.setState(request.state());
-        customer.setBalance(request.balance());
+        customer.setBalance(request.balance() != null ? request.balance() : 0.0);
 
         return toResponse(customerRepository.save(customer));
     }
 
+    @Transactional
     public List<CustomerResponse> createCustomersBulk(List<CustomerImportRequest> customers) {
         List<CustomerResponse> savedCustomers = new ArrayList<>();
 
         for (CustomerImportRequest incoming : customers) {
-            if (incoming == null) {
-                continue;
-            }
-
-            if (incoming.name() == null || incoming.name().trim().isEmpty()) {
+            if (incoming == null || incoming.name() == null || incoming.name().trim().isEmpty()) {
                 continue;
             }
 
@@ -69,7 +69,7 @@ public class CustomerService {
                 newCustomer.setCity(incoming.city());
                 newCustomer.setLocation(incoming.location());
                 newCustomer.setState(incoming.state());
-                newCustomer.setBalance(incoming.balance());
+                newCustomer.setBalance(incoming.balance() != null ? incoming.balance() : 0.0);
                 savedCustomers.add(toResponse(customerRepository.save(newCustomer)));
             }
         }
@@ -77,6 +77,7 @@ public class CustomerService {
         return savedCustomers;
     }
 
+    @Transactional
     public CustomerResponse updateCustomer(Long id, UpdateCustomerRequest customerDetails) {
         Customer customer = customerRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Customer not found with id: " + id));
@@ -99,12 +100,14 @@ public class CustomerService {
         if (customerDetails.state() != null) {
             customer.setState(customerDetails.state());
         }
-        if (customerDetails.balance() != 0) {
+        if (customerDetails.balance() != null) {
             customer.setBalance(customerDetails.balance());
         }
+
         return toResponse(customerRepository.save(customer));
     }
 
+    @Transactional
     public void deleteCustomer(Long id) {
         if (!customerRepository.existsById(id)) {
             throw new RuntimeException("Customer not found with id: " + id);
