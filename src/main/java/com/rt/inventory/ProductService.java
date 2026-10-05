@@ -8,8 +8,8 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.rt.InventoryLog;
-import com.rt.InventoryLogRepository;
+import com.rt.history.InventoryHistory;
+import com.rt.history.InventoryHistoryRepository;
 import com.rt.inventory.dto.CreateProductRequest;
 import com.rt.inventory.dto.ProductImportRequest;
 import com.rt.inventory.dto.ProductResponse;
@@ -19,11 +19,11 @@ import com.rt.inventory.dto.UpdateProductRequest;
 public class ProductService {
 
     private final ProductRepository productRepository;
-    private final InventoryLogRepository inventoryLogRepository;
+    private final InventoryHistoryRepository inventoryHistoryRepository;
 
-    public ProductService(ProductRepository productRepository, InventoryLogRepository inventoryLogRepository) {
+    public ProductService(ProductRepository productRepository, InventoryHistoryRepository inventoryHistoryRepository) {
         this.productRepository = productRepository;
-        this.inventoryLogRepository = inventoryLogRepository;
+        this.inventoryHistoryRepository = inventoryHistoryRepository;
     }
 
     @Transactional(readOnly = true)
@@ -88,89 +88,49 @@ public class ProductService {
     }
 
     @Transactional
-    public List<ProductResponse> createProductsBulk(List<?> products) {
+    public List<ProductResponse> createProductsBulk(List<ProductImportRequest> products) {
         List<ProductResponse> savedProducts = new ArrayList<>();
 
-        for (Object rawProduct : products) {
-            if (rawProduct == null) {
+        for (ProductImportRequest p : products) {
+            if (p == null || p.name() == null || p.name().trim().isEmpty()) {
                 continue;
             }
 
-            if (rawProduct instanceof ProductImportRequest p) {
-                if (p == null || p.name() == null || p.name().trim().isEmpty()) {
-                    continue;
+            Product existing = null;
+            if (p.id() != null) {
+                existing = productRepository.findById(p.id()).orElse(null);
+            }
+            if (existing == null) {
+                existing = productRepository.findFirstByName(p.name().trim()).orElse(null);
+            }
+
+            if (existing != null) {
+                Double oldStock = existing.getStock() == null ? 0.0 : existing.getStock();
+                Product updated = mergeIntoExisting(existing, p);
+                Product saved = productRepository.save(updated);
+                savedProducts.add(toResponse(saved));
+
+                Double newStock = saved.getStock() == null ? 0.0 : saved.getStock();
+                if (!oldStock.equals(newStock)) {
+                    saveInventoryLog(saved.getId(), saved.getName(), "BULK_UPDATE", newStock - oldStock, newStock, "Updated via Excel Import");
                 }
+            } else {
+                Product created = new Product();
+                created.setName(p.name().trim());
+                created.setHsnCode(p.hsnCode());
+                created.setPurchasePrice(p.purchasePrice());
+                created.setMrp(p.mrp() == null ? p.price() : p.mrp());
+                created.setPrice(p.price());
+                created.setStock(p.stock() == null ? 0.0 : p.stock());
+                created.setPiecesPerBox(p.piecesPerBox() == null ? 0 : p.piecesPerBox());
+                created.setPiecePurchasePrice(p.piecePurchasePrice());
+                created.setPieceMrp(p.pieceMrp());
+                created.setPiecePrice(p.piecePrice());
+                created.setBarcode(p.barcode());
 
-                Product existing = null;
-                if (p.id() != null) {
-                    existing = productRepository.findById(p.id()).orElse(null);
-                }
-                if (existing == null) {
-                    existing = productRepository.findFirstByName(p.name().trim()).orElse(null);
-                }
-
-                if (existing != null) {
-                    Double oldStock = existing.getStock() == null ? 0.0 : existing.getStock();
-                    Product updated = mergeIntoExisting(existing, p);
-                    Product saved = productRepository.save(updated);
-                    savedProducts.add(toResponse(saved));
-
-                    Double newStock = saved.getStock() == null ? 0.0 : saved.getStock();
-                    if (!oldStock.equals(newStock)) {
-                        saveInventoryLog(saved.getId(), saved.getName(), "BULK_UPDATE", newStock - oldStock, newStock, "Updated via Excel Import");
-                    }
-                } else {
-                    Product created = new Product();
-                    created.setName(p.name().trim());
-                    created.setHsnCode(p.hsnCode());
-                    created.setPurchasePrice(p.purchasePrice());
-                    created.setMrp(p.mrp() == null ? p.price() : p.mrp());
-                    created.setPrice(p.price());
-                    created.setStock(p.stock() == null ? 0.0 : p.stock());
-                    created.setPiecesPerBox(p.piecesPerBox() == null ? 0 : p.piecesPerBox());
-                    created.setPiecePurchasePrice(p.piecePurchasePrice());
-                    created.setPieceMrp(p.pieceMrp());
-                    created.setPiecePrice(p.piecePrice());
-                    created.setBarcode(p.barcode());
-
-                    Product saved = productRepository.save(created);
-                    savedProducts.add(toResponse(saved));
-                    saveInventoryLog(saved.getId(), saved.getName(), "BULK_IMPORT", saved.getStock(), saved.getStock(), "Imported via Excel");
-                }
-            } else if (rawProduct instanceof CreateProductRequest p) {
-                if (p == null || p.name() == null || p.name().trim().isEmpty()) {
-                    continue;
-                }
-
-                Product existing = productRepository.findFirstByName(p.name().trim()).orElse(null);
-
-                if (existing != null) {
-                    Product updated = mergeIntoExisting(existing, p);
-                    Product saved = productRepository.save(updated);
-                    savedProducts.add(toResponse(saved));
-                    Double oldStock = existing.getStock() == null ? 0.0 : existing.getStock();
-                    Double newStock = saved.getStock() == null ? 0.0 : saved.getStock();
-                    if (!oldStock.equals(newStock)) {
-                        saveInventoryLog(saved.getId(), saved.getName(), "BULK_UPDATE", newStock - oldStock, newStock, "Updated via Excel Import");
-                    }
-                } else {
-                    Product created = new Product();
-                    created.setName(p.name().trim());
-                    created.setHsnCode(p.hsnCode());
-                    created.setPurchasePrice(p.purchasePrice());
-                    created.setMrp(p.mrp() == null ? p.price() : p.mrp());
-                    created.setPrice(p.price());
-                    created.setStock(p.stock() == null ? 0.0 : p.stock());
-                    created.setPiecesPerBox(p.piecesPerBox() == null ? 0 : p.piecesPerBox());
-                    created.setPiecePurchasePrice(p.piecePurchasePrice());
-                    created.setPieceMrp(p.pieceMrp());
-                    created.setPiecePrice(p.piecePrice());
-                    created.setBarcode(p.barcode());
-
-                    Product saved = productRepository.save(created);
-                    savedProducts.add(toResponse(saved));
-                    saveInventoryLog(saved.getId(), saved.getName(), "BULK_IMPORT", saved.getStock(), saved.getStock(), "Imported via Excel");
-                }
+                Product saved = productRepository.save(created);
+                savedProducts.add(toResponse(saved));
+                saveInventoryLog(saved.getId(), saved.getName(), "BULK_IMPORT", saved.getStock(), saved.getStock(), "Imported via Excel");
             }
         }
 
@@ -186,7 +146,7 @@ public class ProductService {
     }
 
     private void saveInventoryLog(Long productId, String productName, String actionType, Double qtyChanged, Double finalStock, String desc) {
-        InventoryLog log = new InventoryLog();
+        InventoryHistory log = new InventoryHistory();
         log.setProductId(productId);
         log.setProductName(productName);
         log.setActionType(actionType);
@@ -194,25 +154,10 @@ public class ProductService {
         log.setFinalStock(finalStock);
         log.setDescription(desc);
         log.setTimestamp(LocalDateTime.now());
-        inventoryLogRepository.save(log);
+        inventoryHistoryRepository.save(log);
     }
 
     private Product mergeIntoExisting(Product existing, ProductImportRequest incoming) {
-        if (incoming.name() != null && !incoming.name().trim().isEmpty()) existing.setName(incoming.name().trim());
-        if (incoming.hsnCode() != null && !incoming.hsnCode().isEmpty()) existing.setHsnCode(incoming.hsnCode());
-        if (incoming.purchasePrice() != null) existing.setPurchasePrice(incoming.purchasePrice());
-        if (incoming.mrp() != null) existing.setMrp(incoming.mrp());
-        if (incoming.price() != null) existing.setPrice(incoming.price());
-        if (incoming.stock() != null) existing.setStock(incoming.stock());
-        if (incoming.piecesPerBox() != null) existing.setPiecesPerBox(incoming.piecesPerBox());
-        if (incoming.piecePurchasePrice() != null) existing.setPiecePurchasePrice(incoming.piecePurchasePrice());
-        if (incoming.pieceMrp() != null) existing.setPieceMrp(incoming.pieceMrp());
-        if (incoming.piecePrice() != null) existing.setPiecePrice(incoming.piecePrice());
-        if (incoming.barcode() != null && !incoming.barcode().isEmpty()) existing.setBarcode(incoming.barcode());
-        return existing;
-    }
-
-    private Product mergeIntoExisting(Product existing, CreateProductRequest incoming) {
         if (incoming.name() != null && !incoming.name().trim().isEmpty()) existing.setName(incoming.name().trim());
         if (incoming.hsnCode() != null && !incoming.hsnCode().isEmpty()) existing.setHsnCode(incoming.hsnCode());
         if (incoming.purchasePrice() != null) existing.setPurchasePrice(incoming.purchasePrice());
