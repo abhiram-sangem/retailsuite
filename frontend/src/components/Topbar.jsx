@@ -109,7 +109,7 @@ export default function Topbar({ view, setView, draftsCount, onLogout }) {
           flexWrap: 'wrap'
         }}>
           <button className={`nav-item ${view === 'employees-manage' ? 'active' : ''}`} onClick={() => setView('employees-manage')}>Employees</button>
-          <button className={`nav-item ${view === 'collections' ? 'active' : ''}`} onClick={() => setView('collections')}>Route Planner</button>
+          <button className={`nav-item ${view === 'collections' ? 'active' : ''}`} onClick={() => setView('collections')}>Collections</button>
           <button className={`nav-item ${view === 'reports' ? 'active' : ''}`} onClick={() => setView('reports')}>Reports</button>
           <button className={`nav-item ${view === 'data-transfer' ? 'active' : ''}`} onClick={() => setView('data-transfer')}>Data Transfer</button>
           <button className={`nav-item ${view === 'settings' ? 'active' : ''}`} onClick={() => setView('settings')}>Settings</button>

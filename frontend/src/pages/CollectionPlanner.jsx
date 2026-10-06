@@ -1,16 +1,58 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { formatInvoiceId, formatMoney } from '../utils/formatters';
+import { receiptService } from '../services/api';
 
-export default function CollectionPlanner({ customers, invoices = [] }) {
+export default function CollectionPlanner({ customers = [], invoices = [], receipts: propReceipts }) {
   const [selectedCities, setSelectedCities] = useState([]);
+  const [localReceipts, setLocalReceipts] = useState([]);
 
-  // 1. Find all unique cities where customers actually have a pending balance
+  useEffect(() => {
+    if (!propReceipts || propReceipts.length === 0) {
+      receiptService.getReceipts()
+        .then(data => setLocalReceipts(Array.isArray(data) ? data : []))
+        .catch(err => console.error("Failed to load receipts for Collection Planner:", err));
+    }
+  }, [propReceipts]);
+
+  const receipts = (propReceipts && propReceipts.length > 0) ? propReceipts : localReceipts;
+
+  const normalizeName = (name) => (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  // 1. TRUE DYNAMIC BALANCE ENGINE (Synced with Ledger & ReceiptManager)
+  const trueBalances = useMemo(() => {
+    const balances = {};
+    customers.forEach(c => { balances[c.id] = 0; });
+
+    invoices.forEach(inv => {
+      const cleanInvName = normalizeName((inv.customerName || '').replace(/\s*\(Returned\)\s*/i, ''));
+      const cust = customers.find(c => normalizeName(c.name) === cleanInvName);
+
+      if (cust && inv.paymentMethod === 'Pay Later') {
+        const amount = Math.abs(Number(inv.finalTotal || inv.totalAmount || 0));
+        if (!inv.isReturn) balances[cust.id] += amount;
+        else balances[cust.id] -= amount;
+      }
+    });
+
+    receipts.forEach(rec => {
+      const recNameNorm = normalizeName(rec.customerName);
+      const cust = customers.find(c => String(c.id) === String(rec.customerId) || normalizeName(c.name) === recNameNorm);
+
+      if (cust) {
+        balances[cust.id] -= (Number(rec.amount || 0) + Number(rec.discountAmount || 0));
+      }
+    });
+
+    return balances;
+  }, [customers, invoices, receipts]);
+
+  // 2. Find all unique cities where customers actually have a positive pending balance
   const availableCities = useMemo(() => {
     const cities = customers
-      .filter(c => Number(c.balance) > 0 && c.city)
+      .filter(c => (trueBalances[c.id] || 0) > 0.01 && c.city)
       .map(c => c.city.trim().toUpperCase());
     return [...new Set(cities)].sort();
-  }, [customers]);
+  }, [customers, trueBalances]);
 
   const toggleCity = (city) => {
     setSelectedCities(prev => 
@@ -18,16 +60,15 @@ export default function CollectionPlanner({ customers, invoices = [] }) {
     );
   };
 
-  // 2. Build the exact collection data using the perfect Reverse FIFO math
+  // 3. Build exact collection data using the 2-Pass Surgical + FIFO Engine
   const collectionData = useMemo(() => {
     if (selectedCities.length === 0) return {};
 
     const dataByCity = {};
 
     selectedCities.forEach(city => {
-      // Find customers in this city who owe money
       const cityCustomers = customers.filter(c => 
-        c.city && c.city.trim().toUpperCase() === city && Number(c.balance) > 0
+        c.city && c.city.trim().toUpperCase() === city && (trueBalances[c.id] || 0) > 0.01
       );
 
       if (cityCustomers.length === 0) return;
@@ -35,39 +76,105 @@ export default function CollectionPlanner({ customers, invoices = [] }) {
       const customersWithBills = [];
 
       cityCustomers.forEach(customer => {
-        const targetNameNorm = (customer.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const targetNameNorm = normalizeName(customer.name);
         
-        // Get Pay Later bills for this customer, sorted NEWEST first
+        // Sort Pay Later bills OLDEST first
         const payLaterBills = invoices
-          .filter(inv => !inv.isReturn && inv.paymentMethod === 'Pay Later' && ((inv.customerName || '').toLowerCase().replace(/[^a-z0-9]/g, '') === targetNameNorm))
-          .sort((a, b) => new Date(b.orderDate).getTime() - new Date(a.orderDate).getTime());
+          .filter(inv => !inv.isReturn && inv.paymentMethod === 'Pay Later' && normalizeName(inv.customerName) === targetNameNorm)
+          .sort((a, b) => {
+            const timeDiff = new Date(a.orderDate).getTime() - new Date(b.orderDate).getTime();
+            return timeDiff !== 0 ? timeDiff : a.id - b.id;
+          });
 
-        let remainingBalanceToAttribute = Number(customer.balance);
-        const pending = [];
+        const specificCreditsByBillId = {};
+        payLaterBills.forEach(b => { specificCreditsByBillId[b.id] = 0; });
+        let generalFifoCredits = 0;
 
-        // Apply true balance to newest bills
-        for (const bill of payLaterBills) {
-          if (remainingBalanceToAttribute <= 0) break;
+        // Classify Customer Receipts: Targeted (mentions INV-XXXX in remarks) vs General FIFO
+        receipts.forEach(r => {
+          const recNameNorm = normalizeName(r.customerName);
+          if (String(r.customerId) === String(customer.id) || recNameNorm === targetNameNorm) {
+            const credit = Number(r.amount || 0) + Number(r.discountAmount || 0);
+            const remarksUpper = (r.remarks || '').toUpperCase();
 
-          const originalAmount = Number(bill.finalTotal || bill.totalAmount || 0);
+            let matchedBill = null;
+            for (const bill of payLaterBills) {
+              const formattedTag = formatInvoiceId(bill.id).toUpperCase();
+              const customTag = (bill.customInvoiceId || '').toUpperCase();
+              if (
+                (formattedTag && remarksUpper.includes(formattedTag)) ||
+                (customTag && customTag.length > 2 && remarksUpper.includes(customTag))
+              ) {
+                matchedBill = bill;
+                break;
+              }
+            }
 
-          if (remainingBalanceToAttribute >= originalAmount) {
-            pending.push({ ...bill, originalAmount, previouslyPaid: 0, dueAmount: originalAmount });
-            remainingBalanceToAttribute -= originalAmount;
+            if (matchedBill) {
+              specificCreditsByBillId[matchedBill.id] += credit;
+            } else {
+              generalFifoCredits += credit;
+            }
+          }
+        });
+
+        // Classify Sale Returns: Targeted (by originalInvoiceId) vs General FIFO
+        invoices.forEach(inv => {
+          const invNameNorm = normalizeName((inv.customerName || '').replace(/\s*\(Returned\)\s*/i, ''));
+          if (inv.isReturn && (invNameNorm === targetNameNorm || normalizeName(inv.customerName).includes(targetNameNorm))) {
+            const returnCredit = Math.abs(Number(inv.finalTotal || inv.totalAmount || 0));
+            if (inv.originalInvoiceId && specificCreditsByBillId[inv.originalInvoiceId] !== undefined) {
+              specificCreditsByBillId[inv.originalInvoiceId] += returnCredit;
+            } else {
+              generalFifoCredits += returnCredit;
+            }
+          }
+        });
+
+        // PASS 1: Apply Specific Targeted Credits directly to their matching bill
+        const billsAfterPass1 = payLaterBills.map(bill => {
+          const originalAmount = Math.round(Number(bill.finalTotal || bill.totalAmount || 0) * 100) / 100;
+          const targetedCredit = specificCreditsByBillId[bill.id] || 0;
+
+          if (targetedCredit >= originalAmount) {
+            generalFifoCredits += (targetedCredit - originalAmount);
+            return { ...bill, originalAmount, previouslyPaid: originalAmount, dueAmount: 0 };
           } else {
-            const prevPaid = originalAmount - remainingBalanceToAttribute;
-            pending.push({ ...bill, originalAmount, previouslyPaid: prevPaid, dueAmount: remainingBalanceToAttribute });
-            remainingBalanceToAttribute = 0;
+            return {
+              ...bill,
+              originalAmount,
+              previouslyPaid: targetedCredit,
+              dueAmount: Math.round((originalAmount - targetedCredit) * 100) / 100
+            };
+          }
+        });
+
+        // PASS 2: Apply General FIFO Credits (Oldest Bill First)
+        const pending = [];
+        for (const bill of billsAfterPass1) {
+          if (bill.dueAmount <= 0.009) continue;
+
+          let due = bill.dueAmount;
+          let paid = bill.previouslyPaid;
+
+          if (generalFifoCredits >= due - 0.009) {
+            generalFifoCredits = Math.max(0, generalFifoCredits - due);
+          } else if (generalFifoCredits > 0) {
+            paid = Math.round((paid + generalFifoCredits) * 100) / 100;
+            due = Math.round((due - generalFifoCredits) * 100) / 100;
+            generalFifoCredits = 0;
+            pending.push({ ...bill, previouslyPaid: paid, dueAmount: due });
+          } else {
+            pending.push({ ...bill, previouslyPaid: paid, dueAmount: due });
           }
         }
 
-        // Reverse to show Oldest bills first
-        const sortedPending = pending.reverse();
-
-        if (sortedPending.length > 0) {
+        // Keep Oldest bills first for the printed collection sheet
+        if (pending.length > 0) {
           customersWithBills.push({
             ...customer,
-            pendingBills: sortedPending
+            trueBalance: trueBalances[customer.id] || 0,
+            pendingBills: pending
           });
         }
       });
@@ -78,7 +185,7 @@ export default function CollectionPlanner({ customers, invoices = [] }) {
     });
 
     return dataByCity;
-  }, [selectedCities, customers, invoices]);
+  }, [selectedCities, customers, invoices, receipts, trueBalances]);
 
   // Helper to calculate invoice age in days
   const calculateAge = (dateString) => {
@@ -153,7 +260,7 @@ export default function CollectionPlanner({ customers, invoices = [] }) {
                 <div key={city} style={{ marginBottom: '30px' }}>
                   {/* CITY HEADER */}
                   <h2 style={{ backgroundColor: '#f1f5f9', padding: '10px', borderLeft: '4px solid #3b82f6', marginTop: '0', fontSize: '20px' }}>
-                    📍 {city}
+                     {city}
                   </h2>
 
                   {/* CUSTOMER LOOP */}
@@ -165,7 +272,7 @@ export default function CollectionPlanner({ customers, invoices = [] }) {
                           {customer.mobile && <span style={{ fontSize: '14px', color: '#64748b', marginLeft: '10px' }}>📞 {customer.mobile}</span>}
                         </h3>
                         <div style={{ fontSize: '16px', fontWeight: 'bold' }}>
-                          Total Due: <span style={{ color: '#ef4444' }}>{formatMoney(customer.balance)}</span>
+                          Total Due: <span style={{ color: '#ef4444' }}>{formatMoney(customer.trueBalance)}</span>
                         </div>
                       </div>
 

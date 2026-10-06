@@ -93,7 +93,7 @@ export default function ReceiptManager({ view, setView, customers, receipts, rec
   const safeSearch = (searchQuery || '').toLowerCase();
   const safeReceiptSearch = (receiptSearch || '').toLowerCase();
 
-  // 🚀 NEW: TRUE DYNAMIC BALANCE ENGINE (Matches the Ledger perfectly)
+  // 🚀 TRUE DYNAMIC BALANCE ENGINE (Matches the Ledger perfectly)
   const trueBalances = useMemo(() => {
     const balances = {};
     customers.forEach(c => balances[c.id] = 0);
@@ -148,55 +148,107 @@ export default function ReceiptManager({ view, setView, customers, receipts, rec
   const paginatedReceipts = filteredReceipts.slice(indexOfFirstItem, indexOfLastItem);
   const paginatedReceiptHistory = filteredReceiptHistory.slice(indexOfFirstItem, indexOfLastItem);
 
-  // 🚀 UPGRADED: FIFO Math using actual Receipts and Returns, not static DB balances
+  // 🚀 UPGRADED 2-PASS ENGINE: Pass 1 = Surgical Bill Match (by Remarks/Return ID), Pass 2 = Oldest-First FIFO
   const pendingBills = useMemo(() => {
     if (!activeCustomer) return [];
-    const targetNameNorm = (activeCustomer.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    
-    // 1. Calculate true historical credits (Payments + Returns)
-    let totalCredits = 0;
-    receipts.forEach(r => {
-      const recNameNorm = (r.customerName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (r.customerId === activeCustomer.id || recNameNorm === targetNameNorm) {
-        totalCredits += (Number(r.amount) + Number(r.discountAmount || 0));
-      }
-    });
-    invoices.forEach(inv => {
-      const invNameNorm = (inv.customerName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (inv.isReturn && invNameNorm === targetNameNorm) {
-        totalCredits += Math.abs(Number(inv.finalTotal || inv.totalAmount || 0));
-      }
-    });
+    const normalizeName = (name) => (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const targetNameNorm = normalizeName(activeCustomer.name);
 
-    // 2. Sort Pay Later bills OLDEST first
+    // 1. Get all Pay Later bills for this customer, sorted OLDEST first
     const payLaterBills = invoices
-      .filter(inv => !inv.isReturn && inv.paymentMethod === 'Pay Later' && ((inv.customerName || '').toLowerCase().replace(/[^a-z0-9]/g, '') === targetNameNorm))
-      .sort((a, b) => new Date(a.orderDate).getTime() - new Date(b.orderDate).getTime());
+      .filter(inv => !inv.isReturn && inv.paymentMethod === 'Pay Later' && normalizeName(inv.customerName) === targetNameNorm)
+      .sort((a, b) => {
+        const timeDiff = new Date(a.orderDate).getTime() - new Date(b.orderDate).getTime();
+        return timeDiff !== 0 ? timeDiff : a.id - b.id;
+      });
 
-    const pending = [];
+    // Track targeted credits per bill ID, and general credits for FIFO
+    const specificCreditsByBillId = {};
+    payLaterBills.forEach(b => { specificCreditsByBillId[b.id] = 0; });
+    let generalFifoCredits = 0;
 
-    // 3. Apply credits progressively to find genuinely unpaid amounts
-    for (const bill of payLaterBills) {
-      const originalAmount = Number(bill.finalTotal || bill.totalAmount || 0);
-      let due = originalAmount;
-      let paid = 0;
+    // 2. Classify Customer Receipts: Targeted (mentions INV-XXXX in remarks) vs General FIFO
+    receipts.forEach(r => {
+      const recNameNorm = normalizeName(r.customerName);
+      if (String(r.customerId) === String(activeCustomer.id) || recNameNorm === targetNameNorm) {
+        const credit = Number(r.amount || 0) + Number(r.discountAmount || 0);
+        const remarksUpper = (r.remarks || '').toUpperCase();
 
-      if (totalCredits >= due) {
-        // Fully paid by past history, skip it
-        totalCredits -= due;
-      } else if (totalCredits > 0) {
-        // Partially paid
-        paid = totalCredits;
-        due -= totalCredits;
-        totalCredits = 0;
-        pending.push({ ...bill, originalAmount, previouslyPaid: paid, dueAmount: due });
+        // Check if remarks targets one of this customer's bills (e.g. "Auto-Allocated to INV-0057")
+        let matchedBill = null;
+        for (const bill of payLaterBills) {
+          const formattedTag = formatInvoiceId(bill.id).toUpperCase(); // e.g., "INV-0057"
+          const customTag = (bill.customInvoiceId || '').toUpperCase();
+          if (
+            (formattedTag && remarksUpper.includes(formattedTag)) ||
+            (customTag && customTag.length > 2 && remarksUpper.includes(customTag))
+          ) {
+            matchedBill = bill;
+            break;
+          }
+        }
+
+        if (matchedBill) {
+          specificCreditsByBillId[matchedBill.id] += credit;
+        } else {
+          generalFifoCredits += credit;
+        }
+      }
+    });
+
+    // 3. Classify Sale Returns: Targeted (by originalInvoiceId) vs General FIFO
+    invoices.forEach(inv => {
+      const invNameNorm = normalizeName(inv.customerName.replace(/\s*\(Returned\)\s*/i, ''));
+      if (inv.isReturn && (invNameNorm === targetNameNorm || normalizeName(inv.customerName).includes(targetNameNorm))) {
+        const returnCredit = Math.abs(Number(inv.finalTotal || inv.totalAmount || 0));
+        if (inv.originalInvoiceId && specificCreditsByBillId[inv.originalInvoiceId] !== undefined) {
+          specificCreditsByBillId[inv.originalInvoiceId] += returnCredit;
+        } else {
+          generalFifoCredits += returnCredit;
+        }
+      }
+    });
+
+    // 4. PASS 1: Apply Specific Targeted Credits directly to their matching bill
+    const billsAfterPass1 = payLaterBills.map(bill => {
+      const originalAmount = Math.round(Number(bill.finalTotal || bill.totalAmount || 0) * 100) / 100;
+      const targetedCredit = specificCreditsByBillId[bill.id] || 0;
+
+      if (targetedCredit >= originalAmount) {
+        // Bill is 100% paid by specific receipts! Any excess spills into general FIFO pool
+        generalFifoCredits += (targetedCredit - originalAmount);
+        return { ...bill, originalAmount, previouslyPaid: originalAmount, dueAmount: 0 };
       } else {
-        // Completely unpaid
-        pending.push({ ...bill, originalAmount, previouslyPaid: 0, dueAmount: due });
+        return {
+          ...bill,
+          originalAmount,
+          previouslyPaid: targetedCredit,
+          dueAmount: Math.round((originalAmount - targetedCredit) * 100) / 100
+        };
+      }
+    });
+
+    // 5. PASS 2: Apply General FIFO Credits (Oldest Bill First) to remaining unpaid bills
+    const pending = [];
+    for (const bill of billsAfterPass1) {
+      if (bill.dueAmount <= 0.009) continue; // Already cleared in Pass 1!
+
+      let due = bill.dueAmount;
+      let paid = bill.previouslyPaid;
+
+      if (generalFifoCredits >= due - 0.009) {
+        generalFifoCredits = Math.max(0, generalFifoCredits - due);
+      } else if (generalFifoCredits > 0) {
+        paid = Math.round((paid + generalFifoCredits) * 100) / 100;
+        due = Math.round((due - generalFifoCredits) * 100) / 100;
+        generalFifoCredits = 0;
+        pending.push({ ...bill, previouslyPaid: paid, dueAmount: due });
+      } else {
+        pending.push({ ...bill, previouslyPaid: paid, dueAmount: due });
       }
     }
-    
-    // Reverse so the UI displays newest first
+
+    // Reverse so UI displays newest pending bills at the top
     return pending.reverse();
   }, [activeCustomer, invoices, receipts]);
 
@@ -239,28 +291,47 @@ export default function ReceiptManager({ view, setView, customers, receipts, rec
   };
 
   const handleRowInputChange = (billId, field, value) => {
-    setRowPayments(prev => ({ ...prev, [billId]: { ...prev[billId], [field]: value } }));
+    setRowPayments(prev => ({
+      ...prev,
+      [billId]: {
+        ...(prev[billId] || { amount: '', discount: '' }),
+        [field]: value
+      }
+    }));
   };
 
   const handleFullPaymentClick = (bill) => {
-    handleRowInputChange(bill.id, 'amount', bill.dueAmount.toFixed(2));
-    handleRowInputChange(bill.id, 'discount', '');
+    const cleanDue = Number(bill.dueAmount || 0).toFixed(2);
+    setRowPayments(prev => ({
+      ...prev,
+      [bill.id]: {
+        amount: cleanDue,
+        discount: '0'
+      }
+    }));
   };
 
   const submitRowPayment = (bill) => {
     const inputAmt = Number(rowPayments[bill.id]?.amount || 0);
     const inputDisc = Number(rowPayments[bill.id]?.discount || 0);
-    const totalRowPayment = inputAmt + inputDisc;
+    const totalRowPayment = Math.round((inputAmt + inputDisc) * 100) / 100;
+    const maxDue = Math.round(Number(bill.dueAmount || 0) * 100) / 100;
 
     if (totalRowPayment <= 0) return window.alert("Please enter a payment or discount amount.");
-    if (totalRowPayment > bill.dueAmount) return window.alert(`Cannot pay more than the remaining due amount.`);
+    if (totalRowPayment > maxDue + 0.01) {
+      return window.alert(`Cannot pay more than the remaining due amount (${formatMoney(maxDue)}).`);
+    }
 
     const finalRemarks = `Auto-Allocated to ${formatInvoiceId(bill.id)}`;
 
     receiptService.create(activeCustomer.id, inputAmt, inputDisc, receiptMethod, receiptDate, finalRemarks, customReceiptId)
       .then(() => {
         window.alert(`Payment securely logged specifically against ${formatInvoiceId(bill.id)}!`);
-        setRowPayments(prev => ({ ...prev, [bill.id]: { amount: '', discount: '' } }));
+        setRowPayments(prev => {
+          const next = { ...prev };
+          delete next[bill.id];
+          return next;
+        });
         setCustomReceiptId('');
         loadCustomers(); loadReceipts(); loadHistory();
       })
@@ -452,8 +523,8 @@ export default function ReceiptManager({ view, setView, customers, receipts, rec
                     </thead>
                     <tbody>
                       {liveAutoAllocation.map(bill => {
-                        const currentAmt = rowPayments[bill.id]?.amount || '';
-                        const currentDisc = rowPayments[bill.id]?.discount || '';
+                        const currentAmt = rowPayments[bill.id]?.amount ?? '';
+                        const currentDisc = rowPayments[bill.id]?.discount ?? '';
                         
                         return (
                           <tr key={bill.id} className="available" style={{ 
@@ -487,8 +558,8 @@ export default function ReceiptManager({ view, setView, customers, receipts, rec
                                 </td>
                                 <td className="text-center align-middle">
                                   <div className="btn-group" style={{ justifyContent: 'center' }}>
-                                    <button className="btn btn-secondary btn-sm mb-0" onClick={() => handleFullPaymentClick(bill)}>Fill Full</button>
-                                    <button className="btn btn-primary btn-sm mb-0 px-3" onClick={() => submitRowPayment(bill)}>Pay</button>
+                                    <button type="button" className="btn btn-secondary btn-sm mb-0" onClick={() => handleFullPaymentClick(bill)}>Fill Full</button>
+                                    <button type="button" className="btn btn-primary btn-sm mb-0 px-3" onClick={() => submitRowPayment(bill)}>Pay</button>
                                   </div>
                                 </td>
                               </>
