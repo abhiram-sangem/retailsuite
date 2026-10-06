@@ -280,7 +280,14 @@ public class PurchaseInvoiceService {
                 p.getPiecePurchasePrice(),
                 p.getPieceMrp(),
                 p.getPiecePrice(),
-                p.getBarcode());
+                p.getBarcode(),
+                p.getScheduledDate(),
+                p.getScheduledPurchasePrice(),
+                p.getScheduledMrp(),
+                p.getScheduledPrice(),
+                p.getScheduledPiecePurchasePrice(),
+                p.getScheduledPieceMrp(),
+                p.getScheduledPiecePrice());
 
         return new PurchaseInvoiceItemResponse(
                 item.getId(),

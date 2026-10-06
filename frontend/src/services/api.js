@@ -43,6 +43,24 @@ export const productService = {
     }).then(res => {
       if (!res.ok) throw new Error('Failed to delete product')
     }),
+
+    schedulePrices: (effectiveDate, items) =>
+    fetch(`${API_URL}/api/products/schedule-prices`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ effectiveDate, items }),
+    }).then(res => {
+      if (!res.ok) throw new Error('Failed to schedule price changes')
+      return res.json()
+    }),
+
+  clearScheduledPrice: (id) =>
+    fetch(`${API_URL}/api/products/${id}/schedule-prices`, {
+      method: 'DELETE',
+    }).then(res => {
+      if (!res.ok) throw new Error('Failed to cancel scheduled price')
+      return res.json()
+    }),
 }
 
 export const invoiceService = {

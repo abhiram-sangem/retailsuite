@@ -78,7 +78,24 @@ export default function Topbar({ view, setView, draftsCount, onLogout }) {
 
           <button className={`nav-item ${['ledgers', 'ledger-statement'].includes(view) ? 'active' : ''}`} onClick={() => setView('ledgers')}>Ledgers</button>
           <button className={`nav-item ${view === 'customers-manage' ? 'active' : ''}`} onClick={() => setView('customers-manage')}>Customers</button>
-          <button className={`nav-item ${view === 'products' ? 'active' : ''}`} onClick={() => setView('products')}>Products</button>
+
+          {/* CSS Dropdown for Products */}
+          <div className="nav-dropdown">
+            <button
+              className={`nav-item ${['products', 'price-scheduler'].includes(view) ? 'active' : ''}`}
+              onClick={() => setView('products')}
+            >
+              Products ▼
+            </button>
+            <div className="nav-dropdown-content">
+              <button className={`nav-dropdown-item ${view === 'products' ? 'active' : ''}`} onClick={() => setView('products')}>
+                Manage Products
+              </button>
+              <button className={`nav-dropdown-item ${view === 'price-scheduler' ? 'active' : ''}`} onClick={() => setView('price-scheduler')}>
+                Price Scheduler
+              </button>
+            </div>
+          </div>
           
           {/* Toggle for "More" second row */}
           <button 
@@ -105,7 +122,7 @@ export default function Topbar({ view, setView, draftsCount, onLogout }) {
           marginTop: '12px', 
           paddingTop: '12px', 
           borderTop: '1px solid rgba(255, 255, 255, 0.15)',
-          justifyContent: 'center', // Centers the second row perfectly under the main nav
+          justifyContent: 'center',
           flexWrap: 'wrap'
         }}>
           <button className={`nav-item ${view === 'employees-manage' ? 'active' : ''}`} onClick={() => setView('employees-manage')}>Employees</button>

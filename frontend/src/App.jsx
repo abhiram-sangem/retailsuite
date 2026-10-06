@@ -21,6 +21,7 @@ import SettingsManager from './pages/SettingsManager';
 import VendorManager from './pages/VendorManager';
 import CollectionPlanner from './pages/CollectionPlanner';
 import EmployeeManager from './pages/EmployeeManager';
+import PriceScheduler from './pages/PriceScheduler';
 
 // --- API ---
 import { 
@@ -48,7 +49,6 @@ export default function App() {
   const [employees, setEmployees] = useState([]);
 
   // --- SMART CACHE TRACKER ---
-  // Remembers what is already in browser memory so switching tabs doesn't re-fetch!
   const loadedCache = useRef({
     products: false,
     customers: false,
@@ -63,7 +63,7 @@ export default function App() {
     receiptHistory: false
   });
 
-  // --- DIRECT LOADERS (Called when child components Add/Edit/Delete data to force a fresh sync) ---
+  // --- DIRECT LOADERS ---
   function loadEmployees() {
     loadedCache.current.employees = true;
     employeeService.getEmployees().then(data => setEmployees(Array.isArray(data) ? data : []));
@@ -116,7 +116,6 @@ export default function App() {
     loadReceiptHistory();
   }
 
-  // --- CACHE-AWARE HELPER (Only fetches if not already in browser memory) ---
   const ensureLoaded = (key, loaderFn) => {
     if (!loadedCache.current[key]) {
       loaderFn();
@@ -133,6 +132,7 @@ export default function App() {
         break;
 
       case 'products':
+      case 'price-scheduler':
       case 'inventory':
         ensureLoaded('products', loadProducts);
         break;
@@ -158,6 +158,7 @@ export default function App() {
       case 'ledger-statement':
       case 'receipts':
       case 'receipts-list':
+      case 'collections':
         ensureLoaded('customers', loadCustomers);
         ensureLoaded('invoices', loadInvoices);
         ensureLoaded('receipts', loadReceipts);
@@ -196,11 +197,6 @@ export default function App() {
       case 'purchase-edit-history':
       case 'purchase-edit-compare':
         ensureLoaded('purchaseInvoiceHistory', loadPurchaseInvoiceHistory);
-        break;
-
-      case 'collections':
-        ensureLoaded('customers', loadCustomers);
-        ensureLoaded('invoices', loadInvoices);
         break;
 
       case 'data-transfer':
@@ -277,13 +273,13 @@ export default function App() {
           <Dashboard salesStats={salesStats} invoices={invoices} setView={setView} />
         )}
         {['products'].includes(view) && (
-          <ProductsManager products={products} loadProducts={loadProducts} loadHistory={loadInventoryHistory} />
+          <ProductsManager products={products} loadProducts={loadProducts} loadHistory={loadInventoryHistory} setView={setView} />
         )}
         {['inventory', 'inventory-history'].includes(view) && (
-          <InventoryManager view={view} products={products} inventoryHistory={inventoryHistory} loadProducts={loadProducts} loadHistory={loadInventoryHistory} />
+          <InventoryManager view={view} products={products} inventoryHistory={inventoryHistory} loadProducts={loadProducts} loadHistory={loadInventoryHistory} setView={setView} />
         )}
         {['customers-manage'].includes(view) && (
-          <CustomerManager customers={customers} loadCustomers={loadCustomers} />
+          <CustomerManager customers={customers} loadCustomers={loadCustomers} setView={setView} />
         )}
         {['ledgers', 'ledger-statement'].includes(view) && (
           <LedgerManager view={view} setView={setView} customers={customers} invoices={invoices} receipts={receipts} />
@@ -307,13 +303,16 @@ export default function App() {
           <SettingsManager />
         )}
         {view === 'vendors-manage' && (
-          <VendorManager vendors={vendors} loadVendors={loadVendors} />
+          <VendorManager vendors={vendors} loadVendors={loadVendors} setView={setView} />
         )}
         {view === 'employees-manage' && (
-          <EmployeeManager employees={employees} loadEmployees={loadEmployees} />
+          <EmployeeManager employees={employees} loadEmployees={loadEmployees} setView={setView} />
         )}
         {view === 'collections' && (
-          <CollectionPlanner customers={customers} invoices={invoices} />
+          <CollectionPlanner customers={customers} invoices={invoices} receipts={receipts} />
+        )}
+        {view === 'price-scheduler' && (
+          <PriceScheduler products={products} loadProducts={loadProducts} loadHistory={loadInventoryHistory} setView={setView} />
         )}
       </main>
     </div>

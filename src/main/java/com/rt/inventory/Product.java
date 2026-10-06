@@ -1,5 +1,7 @@
 package com.rt.inventory;
 
+import java.time.LocalDate;
+
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -18,17 +20,26 @@ public class Product {
     private Double mrp; 
     private Double price;
     
-    // --- CHANGED TO DOUBLE FOR FRACTIONAL STOCK ---
+    // --- FRACTIONAL STOCK ---
     private Double stock;
 
-    // --- NEW PIECE PRICING FIELDS ---
+    // --- PIECE PRICING FIELDS ---
     private Integer piecesPerBox;
     private Double piecePurchasePrice;
     private Double pieceMrp;
     private Double piecePrice;
     
-    // --- NEW FIELD FOR BARCODE SCANNING ---
+    // --- BARCODE SCANNING ---
     private String barcode;
+
+    // --- NEW: SCHEDULED PRICE ROLLOUT FIELDS ---
+    private LocalDate scheduledDate;
+    private Double scheduledPurchasePrice;
+    private Double scheduledMrp;
+    private Double scheduledPrice;
+    private Double scheduledPiecePurchasePrice;
+    private Double scheduledPieceMrp;
+    private Double scheduledPiecePrice;
 
     public Product() {}
 
@@ -87,4 +98,25 @@ public class Product {
 
     public String getBarcode() { return barcode; }
     public void setBarcode(String barcode) { this.barcode = barcode; }
+
+    public LocalDate getScheduledDate() { return scheduledDate; }
+    public void setScheduledDate(LocalDate scheduledDate) { this.scheduledDate = scheduledDate; }
+
+    public Double getScheduledPurchasePrice() { return scheduledPurchasePrice; }
+    public void setScheduledPurchasePrice(Double scheduledPurchasePrice) { this.scheduledPurchasePrice = scheduledPurchasePrice; }
+
+    public Double getScheduledMrp() { return scheduledMrp; }
+    public void setScheduledMrp(Double scheduledMrp) { this.scheduledMrp = scheduledMrp; }
+
+    public Double getScheduledPrice() { return scheduledPrice; }
+    public void setScheduledPrice(Double scheduledPrice) { this.scheduledPrice = scheduledPrice; }
+
+    public Double getScheduledPiecePurchasePrice() { return scheduledPiecePurchasePrice; }
+    public void setScheduledPiecePurchasePrice(Double scheduledPiecePurchasePrice) { this.scheduledPiecePurchasePrice = scheduledPiecePurchasePrice; }
+
+    public Double getScheduledPieceMrp() { return scheduledPieceMrp; }
+    public void setScheduledPieceMrp(Double scheduledPieceMrp) { this.scheduledPieceMrp = scheduledPieceMrp; }
+
+    public Double getScheduledPiecePrice() { return scheduledPiecePrice; }
+    public void setScheduledPiecePrice(Double scheduledPiecePrice) { this.scheduledPiecePrice = scheduledPiecePrice; }
 }

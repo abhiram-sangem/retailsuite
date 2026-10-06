@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.rt.inventory.dto.CreateProductRequest;
 import com.rt.inventory.dto.ProductImportRequest;
 import com.rt.inventory.dto.ProductResponse;
+import com.rt.inventory.dto.SchedulePriceChangeRequest;
 import com.rt.inventory.dto.UpdateProductRequest;
 
 @RestController
@@ -46,6 +47,24 @@ public class ProductController {
     @PostMapping("/bulk")
     public ResponseEntity<List<ProductResponse>> addProductsBulk(@RequestBody List<ProductImportRequest> products) {
         return ResponseEntity.ok(productService.createProductsBulk(products));
+    }
+
+    @PostMapping("/schedule-prices")
+    public ResponseEntity<List<ProductResponse>> scheduleBulkPriceChanges(@RequestBody SchedulePriceChangeRequest request) {
+        try {
+            return ResponseEntity.ok(productService.scheduleBulkPriceChanges(request));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+    @DeleteMapping("/{id}/schedule-prices")
+    public ResponseEntity<ProductResponse> clearScheduledPrice(@PathVariable Long id) {
+        try {
+            return ResponseEntity.ok(productService.clearScheduledPrice(id));
+        } catch (RuntimeException e) {
+            return ResponseEntity.notFound().build();
+        }
     }
 
     @PutMapping("/{id}")

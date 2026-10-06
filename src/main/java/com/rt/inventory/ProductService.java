@@ -1,10 +1,12 @@
 package com.rt.inventory;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,6 +15,7 @@ import com.rt.history.InventoryHistoryRepository;
 import com.rt.inventory.dto.CreateProductRequest;
 import com.rt.inventory.dto.ProductImportRequest;
 import com.rt.inventory.dto.ProductResponse;
+import com.rt.inventory.dto.SchedulePriceChangeRequest;
 import com.rt.inventory.dto.UpdateProductRequest;
 
 @Service
@@ -26,11 +29,109 @@ public class ProductService {
         this.inventoryHistoryRepository = inventoryHistoryRepository;
     }
 
-    @Transactional(readOnly = true)
+    // Automatically runs every 60 seconds in the background to apply due price changes
+    @Scheduled(fixedRate = 60000)
+    @Transactional
+    public void applyDueScheduledPrices() {
+        List<Product> dueProducts = productRepository.findByScheduledDateLessThanEqual(LocalDate.now());
+        if (dueProducts == null || dueProducts.isEmpty()) {
+            return;
+        }
+
+        for (Product p : dueProducts) {
+            applyScheduledPricesToProduct(p, "Scheduled Price Rollout (Effective " + p.getScheduledDate() + ")");
+            productRepository.save(p);
+        }
+    }
+
+    @Transactional
     public List<ProductResponse> getAllProducts() {
+        // Ensure any due scheduled prices are applied immediately before returning list
+        applyDueScheduledPrices();
+
         return productRepository.findAll().stream()
                 .map(this::toResponse)
                 .collect(Collectors.toList());
+    }
+
+    @Transactional
+    public List<ProductResponse> scheduleBulkPriceChanges(SchedulePriceChangeRequest request) {
+        if (request == null || request.effectiveDate() == null || request.items() == null) {
+            throw new RuntimeException("Effective date and product price items are required");
+        }
+
+        LocalDate effectiveDate = request.effectiveDate();
+        boolean applyImmediately = !effectiveDate.isAfter(LocalDate.now());
+
+        for (SchedulePriceChangeRequest.ProductPriceItem item : request.items()) {
+            if (item == null || item.productId() == null) continue;
+
+            boolean hasAnyChange = item.newPurchasePrice() != null
+                    || item.newMrp() != null
+                    || item.newPrice() != null
+                    || item.newPiecePurchasePrice() != null
+                    || item.newPieceMrp() != null
+                    || item.newPiecePrice() != null;
+
+            if (!hasAnyChange) continue;
+
+            Product product = productRepository.findById(item.productId()).orElse(null);
+            if (product == null) continue;
+
+            product.setScheduledDate(effectiveDate);
+            product.setScheduledPurchasePrice(item.newPurchasePrice());
+            product.setScheduledMrp(item.newMrp());
+            product.setScheduledPrice(item.newPrice());
+            product.setScheduledPiecePurchasePrice(item.newPiecePurchasePrice());
+            product.setScheduledPieceMrp(item.newPieceMrp());
+            product.setScheduledPiecePrice(item.newPiecePrice());
+
+            if (applyImmediately) {
+                applyScheduledPricesToProduct(product, "Immediate Bulk Price Update");
+            }
+
+            productRepository.save(product);
+        }
+
+        return getAllProducts();
+    }
+
+    @Transactional
+    public ProductResponse clearScheduledPrice(Long id) {
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Product not found with id: " + id));
+        clearScheduleFields(product);
+        return toResponse(productRepository.save(product));
+    }
+
+    private void applyScheduledPricesToProduct(Product p, String reason) {
+        Double oldBoxPrice = p.getPrice();
+        if (p.getScheduledPurchasePrice() != null) p.setPurchasePrice(p.getScheduledPurchasePrice());
+        if (p.getScheduledMrp() != null) p.setMrp(p.getScheduledMrp());
+        if (p.getScheduledPrice() != null) p.setPrice(p.getScheduledPrice());
+        if (p.getScheduledPiecePurchasePrice() != null) p.setPiecePurchasePrice(p.getScheduledPiecePurchasePrice());
+        if (p.getScheduledPieceMrp() != null) p.setPieceMrp(p.getScheduledPieceMrp());
+        if (p.getScheduledPiecePrice() != null) p.setPiecePrice(p.getScheduledPiecePrice());
+
+        clearScheduleFields(p);
+
+        saveInventoryLog(
+                p.getId(),
+                p.getName(),
+                "PRICE_UPDATE",
+                0.0,
+                p.getStock() == null ? 0.0 : p.getStock(),
+                reason + " (Box Sell: " + oldBoxPrice + " -> " + p.getPrice() + ")");
+    }
+
+    private void clearScheduleFields(Product p) {
+        p.setScheduledDate(null);
+        p.setScheduledPurchasePrice(null);
+        p.setScheduledMrp(null);
+        p.setScheduledPrice(null);
+        p.setScheduledPiecePurchasePrice(null);
+        p.setScheduledPieceMrp(null);
+        p.setScheduledPiecePrice(null);
     }
 
     @Transactional
@@ -53,6 +154,7 @@ public class ProductService {
         product.setBarcode(request.barcode());
 
         Product saved = productRepository.save(product);
+
         saveInventoryLog(saved.getId(), saved.getName(), "NEW_PRODUCT", saved.getStock(), saved.getStock(), "Initial Stock Entry");
 
         return toResponse(saved);
@@ -172,7 +274,7 @@ public class ProductService {
         return existing;
     }
 
-    private ProductResponse toResponse(Product product) {
+    public ProductResponse toResponse(Product product) {
         return new ProductResponse(
                 product.getId(),
                 product.getName(),
@@ -185,6 +287,13 @@ public class ProductService {
                 product.getPiecePurchasePrice(),
                 product.getPieceMrp(),
                 product.getPiecePrice(),
-                product.getBarcode());
+                product.getBarcode(),
+                product.getScheduledDate(),
+                product.getScheduledPurchasePrice(),
+                product.getScheduledMrp(),
+                product.getScheduledPrice(),
+                product.getScheduledPiecePurchasePrice(),
+                product.getScheduledPieceMrp(),
+                product.getScheduledPiecePrice());
     }
 }
