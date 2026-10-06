@@ -205,8 +205,8 @@ export default function Dashboard({ invoices = [], setView }) {
   );
 
   const renderOverviewCard = (title, data, tab, setTab, time, setTime, start, setStart, end, setEnd) => (
-    <div className="card mb-0" style={{ flex: '1', minWidth: '300px', display: 'flex', flexDirection: 'column' }}>
-      <div className="card-header pb-1 border-none" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '8px' }}>
+    <div className="card mb-0" style={{ flex: '1', minWidth: '300px', display: 'flex', flexDirection: 'column', padding: '1.35rem 1.5rem' }}>
+      <div className="card-header border-none" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '8px', marginBottom: '0.6rem', paddingBottom: '0' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
           <h3 className="card-title mb-0 fs-lg">{title}</h3>
           {renderTimeDropdown(time, setTime)}
@@ -219,26 +219,26 @@ export default function Dashboard({ invoices = [], setView }) {
           </div>
         )}
 
-        <div className="btn-group w-100 mt-1">
-          <button className={`btn ${tab === 'daily' ? 'btn-primary' : 'btn-secondary'} flex-1 mb-0 py-1`} onClick={() => setTab('daily')}>Daily</button>
-          <button className={`btn ${tab === 'monthly' ? 'btn-primary' : 'btn-secondary'} flex-1 mb-0 py-1`} onClick={() => setTab('monthly')}>Monthly</button>
+        <div className="btn-group w-100" style={{ marginTop: '4px', gap: '8px' }}>
+          <button className={`btn ${tab === 'daily' ? 'btn-primary' : 'btn-secondary'} flex-1 mb-0`} style={{ padding: '7px 12px', fontSize: '0.92rem' }} onClick={() => setTab('daily')}>Daily</button>
+          <button className={`btn ${tab === 'monthly' ? 'btn-primary' : 'btn-secondary'} flex-1 mb-0`} style={{ padding: '7px 12px', fontSize: '0.92rem' }} onClick={() => setTab('monthly')}>Monthly</button>
         </div>
       </div>
       
-      <div style={{ padding: '0 1.5rem', paddingBottom: '0.5rem' }}>
+      <div style={{ paddingBottom: '8px', borderBottom: '1px solid #e2e8f0', marginBottom: '6px' }}>
         <div className="text-muted fs-sm fw-bold">Period Revenue: <span className="text-success">{formatMoney(data.totalRevenue)}</span></div>
       </div>
 
-      <div style={{ maxHeight: '200px', overflowY: 'auto', padding: '0 1.5rem 1.5rem 1.5rem' }}>
-        <table className="summary-table w-100">
+      <div style={{ maxHeight: '255px', overflowY: 'auto', paddingRight: '4px' }}>
+        <table className="summary-table w-100 mb-0">
           <tbody>
             {data[tab].length === 0 ? (
               <tr><td className="text-dark-muted text-center pt-2">No records found</td></tr>
             ) : (
               data[tab].map((item, i) => (
                 <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <td className="py-1 fw-bold text-slate">{item.label}</td>
-                  <td className="py-1 text-success text-right fw-bold">{formatMoney(item.total)}</td>
+                  <td className="fw-bold text-slate" style={{ padding: '8px 0', fontSize: '0.95rem' }}>{item.label}</td>
+                  <td className="text-success text-right fw-bold" style={{ padding: '8px 0', fontSize: '0.95rem' }}>{formatMoney(item.total)}</td>
                 </tr>
               ))
             )}

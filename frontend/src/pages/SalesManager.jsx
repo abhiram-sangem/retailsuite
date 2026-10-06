@@ -329,7 +329,7 @@ export default function SalesManager({
     setView('payment-screen');
   }
 
-  // 🚀 FIXED: Skips the Invoice Details screen and directly opens the print dialog while staying on the New Sale screen
+  // Skips the Invoice Details screen and directly opens the print dialog while staying on the New Sale screen
   function submitFinalSale(isDirectPayLater = false) {
     if (!activeTab.cart.length) return window.alert('Cart is empty.');
     if (!activeTab.activeCustomer) return window.alert('Please select a customer before submitting.');
@@ -354,10 +354,10 @@ export default function SalesManager({
         
         invoiceService.getInvoiceById(invoice.id).then(fullInvoice => {
           setSelectedInvoice(fullInvoice);
-          setView('list'); // Do not redirect to the sales list! Keep them on the New Sale dashboard.
+          setView('list');
           setTimeout(() => {
             window.print();
-            setSelectedInvoice(null); // Clear the printable invoice from DOM after printing
+            setSelectedInvoice(null);
           }, 800); 
         });
       }).catch(err => window.alert('Failed to update sale. ' + err.message));
@@ -374,7 +374,7 @@ export default function SalesManager({
 
         invoiceService.getInvoiceById(invoice.id).then(fullInvoice => {
           setSelectedInvoice(fullInvoice);
-          setView('list'); // Keep them on the New Sale dashboard!
+          setView('list');
           setTimeout(() => {
             window.print();
             setSelectedInvoice(null);
@@ -1080,8 +1080,8 @@ export default function SalesManager({
                       <th className="text-left col-15">ID</th>
                       <th className="text-left col-35">Product Name</th>
                       <th className="text-center col-10">HSN Code</th>
-                      <th className="text-right col-15">Box Price</th>
-                      <th className="text-right col-15">Piece Price</th>
+                      <th className="text-right col-15">Sales Price</th>
+                      <th className="text-right col-15">MRP</th>
                       <th className="text-center col-10">Stock</th>
                     </tr>
                   </thead>
@@ -1101,7 +1101,7 @@ export default function SalesManager({
                           <td className="product-name-large">{product.name}</td>
                           <td className="text-center text-muted">{product.hsnCode || 'N/A'}</td>
                           <td className="price-text text-right text-success">{formatMoney(product.price)}</td>
-                          <td className="price-text text-right text-purple">{product.piecesPerBox > 0 ? formatMoney(product.piecePrice) : '-'}</td>
+                          <td className="price-text text-right text-slate">{formatMoney(product.mrp ?? product.price)}</td>
                           <td className={`fw-bold text-center ${isOutOfStock ? 'text-danger' : 'text-primary'}`}>{isOutOfStock ? 'Out of Stock' : `${Math.floor(availableStock)} Boxes`}</td>
                         </tr>
                       )

@@ -85,48 +85,55 @@ export default function CustomerManager({ customers, loadCustomers }) {
                 <th>Customer Name</th>
                 <th>Contact</th>
                 <th>Location Details</th>
+                <th>Balance</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {paginatedCustomers.length ? paginatedCustomers.map((c, index) => (
-                <tr key={c.id} className="product-row available">
-                  <td className="cell-padded">{indexOfFirstItem + index + 1}</td>
-                  <td className="fw-bold cell-padded">
-                    {c.name}
-                    {c.gstno && <div className="text-muted fs-sm">GST: {c.gstno}</div>}
-                  </td>
-                  <td className="cell-padded">{c.mobile}</td>
-                  <td className="cell-padded">
-                    {c.city || 'No City'}
-                    {(c.location || c.state) && (
-                      <div className="text-muted fs-sm">
-                        {[c.location, c.state].filter(Boolean).join(', ')}
+              {paginatedCustomers.length ? paginatedCustomers.map((c, index) => {
+                const bal = Number(c.balance || 0);
+                return (
+                  <tr key={c.id} className="product-row available">
+                    <td className="cell-padded">{indexOfFirstItem + index + 1}</td>
+                    <td className="fw-bold cell-padded">
+                      {c.name}
+                      {c.gstno && <div className="text-muted fs-sm">GST: {c.gstno}</div>}
+                    </td>
+                    <td className="cell-padded">{c.mobile}</td>
+                    <td className="cell-padded">
+                      {c.city || 'No City'}
+                      {(c.location || c.state) && (
+                        <div className="text-muted fs-sm">
+                          {[c.location, c.state].filter(Boolean).join(', ')}
+                        </div>
+                      )}
+                    </td>
+                    <td className={`fw-bold cell-padded ${bal > 0 ? 'text-danger' : (bal < 0 ? 'text-success' : 'text-muted')}`}>
+                      {formatMoney(Math.abs(bal))} {bal > 0 ? '(Due)' : (bal < 0 ? '(Advance)' : '')}
+                    </td>
+                    <td className="cell-padded">
+                      <div className="btn-group">
+                        <button className="btn btn-secondary" onClick={() => setViewingCustomer(c)}>View Details</button>
+                        <button 
+                          className="btn btn-warning" 
+                          onClick={() => { 
+                            setIsCustomerEditMode(true);
+                            setEditingCustomerId(c.id);
+                            setCustomerForm({ 
+                              name: c.name, gstno: c.gstno || '', mobile: c.mobile || '', 
+                              city: c.city || '', location: c.location || '', state: c.state || ''
+                            });
+                            setShowCustomerModal(true); 
+                          }}
+                        >
+                          Edit
+                        </button>
                       </div>
-                    )}
-                  </td>
-                  <td className="cell-padded">
-                    <div className="btn-group">
-                      <button className="btn btn-secondary" onClick={() => setViewingCustomer(c)}>View Details</button>
-                      <button 
-                        className="btn btn-warning" 
-                        onClick={() => { 
-                          setIsCustomerEditMode(true);
-                          setEditingCustomerId(c.id);
-                          setCustomerForm({ 
-                            name: c.name, gstno: c.gstno || '', mobile: c.mobile || '', 
-                            city: c.city || '', location: c.location || '', state: c.state || ''
-                          });
-                          setShowCustomerModal(true); 
-                        }}
-                      >
-                        Edit
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              )) : (
-                <tr><td colSpan={5} className="empty-state">No customers found.</td></tr>
+                    </td>
+                  </tr>
+                );
+              }) : (
+                <tr><td colSpan={6} className="empty-state">No customers found.</td></tr>
               )}
             </tbody>
           </table>
@@ -146,6 +153,12 @@ export default function CustomerManager({ customers, loadCustomers }) {
               <div className="info-block"><span className="info-label">City</span><strong className="info-value">{viewingCustomer.city || 'N/A'}</strong></div>
               <div className="info-block"><span className="info-label">Location</span><strong className="info-value">{viewingCustomer.location || 'N/A'}</strong></div>
               <div className="info-block"><span className="info-label">State</span><strong className="info-value">{viewingCustomer.state || 'N/A'}</strong></div>
+              <div className="info-block">
+                <span className="info-label">Balance</span>
+                <strong className={`info-value ${Number(viewingCustomer.balance || 0) > 0 ? 'text-danger' : (Number(viewingCustomer.balance || 0) < 0 ? 'text-success' : 'text-muted')}`}>
+                  {formatMoney(Math.abs(Number(viewingCustomer.balance || 0)))} {Number(viewingCustomer.balance || 0) > 0 ? '(Due)' : (Number(viewingCustomer.balance || 0) < 0 ? '(Advance)' : '')}
+                </strong>
+              </div>
             </div>
             <div className="modal-actions center-actions mt-1">
               <button onClick={() => setViewingCustomer(null)} className="btn btn-secondary w-100">Close</button>
