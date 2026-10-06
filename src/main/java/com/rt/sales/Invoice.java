@@ -5,6 +5,7 @@ import java.util.List;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -12,6 +13,7 @@ import jakarta.persistence.OneToMany;
 
 @Entity
 public class Invoice {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -25,18 +27,15 @@ public class Invoice {
     private Double finalTotal;
     private String paymentMethod; 
     
-    // --- NEW FIELDS ---
     private Integer dueDays;
     private String customInvoiceId;
     
-    // --- FIELDS FOR RETURNS ---
     private Boolean isReturn = false;
     private Long originalInvoiceId;
 
-    @OneToMany(cascade = CascadeType.ALL, mappedBy = "invoice", orphanRemoval = true)
+    @OneToMany(cascade = CascadeType.ALL, mappedBy = "invoice", orphanRemoval = true, fetch = FetchType.LAZY)
     private List<InvoiceItem> items;
 
-    // --- GETTERS AND SETTERS ---
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     

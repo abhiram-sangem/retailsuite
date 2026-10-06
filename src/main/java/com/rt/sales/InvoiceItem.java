@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.rt.inventory.Product;
 
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -17,20 +18,17 @@ public class InvoiceItem {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "product_id")
     private Product product;
 
-    // --- CHANGED TO DOUBLE TO SUPPORT FRACTIONAL RETURNS/EDITS ---
     private Double quantity;
     private Double price;
-    
-    // --- NEW FIELD FOR BOX vs PIECE ---
     private String sellType; 
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "invoice_id")
-    @JsonIgnore // Prevents infinite JSON recursion crash
+    @JsonIgnore
     private Invoice invoice;
 
     public Long getId() { return id; }

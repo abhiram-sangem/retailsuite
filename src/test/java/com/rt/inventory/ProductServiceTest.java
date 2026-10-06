@@ -1,19 +1,18 @@
 package com.rt.inventory;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import static org.mockito.ArgumentMatchers.any;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.rt.InventoryLog;
-import com.rt.InventoryLogRepository;
+import com.rt.history.InventoryHistory;
+import com.rt.history.InventoryHistoryRepository;
 import com.rt.inventory.dto.CreateProductRequest;
 import com.rt.inventory.dto.ProductResponse;
 
@@ -24,7 +23,7 @@ class ProductServiceTest {
     private ProductRepository productRepository;
 
     @Mock
-    private InventoryLogRepository inventoryLogRepository;
+    private InventoryHistoryRepository inventoryHistoryRepository;
 
     @InjectMocks
     private ProductService productService;
@@ -57,6 +56,6 @@ class ProductServiceTest {
 
         assertEquals("Rice", response.name());
         assertEquals(150.0, response.mrp());
-        verify(inventoryLogRepository).save(any(InventoryLog.class));
+        verify(inventoryHistoryRepository).save(any(InventoryHistory.class));
     }
 }

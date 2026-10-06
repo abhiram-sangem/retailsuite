@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.rt.inventory.Product;
 
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -12,26 +13,24 @@ import jakarta.persistence.ManyToOne;
 
 @Entity
 public class PurchaseInvoiceItem {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "product_id")
     private Product product;
 
     private Integer quantity;
     private Double purchasePrice;
-    
-    // --- NEW FIELD INJECTED TO FIX COMPILE ERROR ---
     private String sellType;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "purchase_invoice_id")
     @JsonIgnore
     private PurchaseInvoice purchaseInvoice;
 
-    // --- GETTERS AND SETTERS ---
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     
@@ -44,7 +43,6 @@ public class PurchaseInvoiceItem {
     public Double getPurchasePrice() { return purchasePrice; }
     public void setPurchasePrice(Double purchasePrice) { this.purchasePrice = purchasePrice; }
 
-    // --- NEW GETTER & SETTER FOR SELL TYPE ---
     public String getSellType() { return sellType; }
     public void setSellType(String sellType) { this.sellType = sellType; }
 

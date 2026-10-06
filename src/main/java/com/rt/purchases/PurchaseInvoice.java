@@ -6,6 +6,7 @@ import java.util.List;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -20,25 +21,21 @@ public class PurchaseInvoice {
 
     private String customInvoiceId;
     private String sellerName;
-    
-    // --- NEW VENDOR DETAILS ---
     private String sellerPhone;
     private String sellerGst;
 
     private LocalDate purchaseDate;
     private LocalDateTime entryDate;
 
-    // --- BILLING COLUMNS ---
     private Double grossTotal;
     private Double discountPercent;
     private Double cgst;
     private Double sgst;
     private Double finalTotal;
 
-    @OneToMany(cascade = CascadeType.ALL, mappedBy = "purchaseInvoice")
+    @OneToMany(cascade = CascadeType.ALL, mappedBy = "purchaseInvoice", orphanRemoval = true, fetch = FetchType.LAZY)
     private List<PurchaseInvoiceItem> items;
 
-    // --- GETTERS & SETTERS ---
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
