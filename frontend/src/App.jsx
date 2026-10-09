@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import './App.css';
 
 // --- COMPONENTS ---
@@ -16,7 +16,6 @@ import PurchaseManager from './pages/PurchaseManager';
 import LedgerManager from './pages/LedgerManager';
 import ReceiptManager from './pages/ReceiptManager';
 import InventoryManager from './pages/InventoryManager';
-import InvoiceBuilder from './pages/InvoiceBuilder';
 import SettingsManager from './pages/SettingsManager';
 import VendorManager from './pages/VendorManager';
 import CollectionPlanner from './pages/CollectionPlanner';
@@ -36,8 +35,9 @@ export default function App() {
   const [loginError, setLoginError] = useState('');
 
   const [view, setView] = useState('home');
+  const [dashboardData, setDashboardData] = useState(null); // <-- NEW: Stores fast dashboard data
   const [products, setProducts] = useState([]);
-  const [invoices, setInvoices] = useState([]);
+  const [invoices, setInvoices] = useState([]); 
   const [purchaseInvoices, setPurchaseInvoices] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [receipts, setReceipts] = useState([]);
@@ -50,6 +50,7 @@ export default function App() {
 
   // --- SMART CACHE TRACKER ---
   const loadedCache = useRef({
+    dashboard: false,
     products: false,
     customers: false,
     invoices: false,
@@ -64,6 +65,19 @@ export default function App() {
   });
 
   // --- DIRECT LOADERS ---
+  function loadDashboardData() {
+    loadedCache.current.dashboard = true;
+    const today = new Date();
+    const lastYear = new Date();
+    lastYear.setFullYear(today.getFullYear() - 1);
+    
+    const startStr = lastYear.toISOString().split('T')[0];
+    const endStr = today.toISOString().split('T')[0];
+
+    invoiceService.getDashboardData(startStr, endStr)
+      .then(data => setDashboardData(data || []))
+      .catch(err => console.error("Dashboard fetch error:", err));
+  }
   function loadEmployees() {
     loadedCache.current.employees = true;
     employeeService.getEmployees().then(data => setEmployees(Array.isArray(data) ? data : []));
@@ -128,7 +142,7 @@ export default function App() {
 
     switch (view) {
       case 'home':
-        ensureLoaded('invoices', loadInvoices);
+        ensureLoaded('dashboard', loadDashboardData); // Loads Dashboard instantly and caches it!
         break;
 
       case 'products':
@@ -171,13 +185,17 @@ export default function App() {
 
       case 'list':
       case 'payment-screen':
+      case 'drafts-list':
+        // ONLY Load products and customers for the Cart. Avoid loading heavy global invoices!
+        ensureLoaded('products', loadProducts);
+        ensureLoaded('customers', loadCustomers);
+        break;
+
       case 'invoices':
       case 'invoice-details':
       case 'return-sale':
-      case 'drafts-list':
         ensureLoaded('products', loadProducts);
         ensureLoaded('customers', loadCustomers);
-        ensureLoaded('invoices', loadInvoices);
         break;
 
       case 'edit-history':
@@ -217,33 +235,6 @@ export default function App() {
     }
   }, [view, isLoggedIn]);
 
-  const salesStats = useMemo(() => {
-    const dailyMap = {}; const weeklyMap = {}; const monthlyMap = {}; const yearlyMap = {};
-    invoices.forEach(inv => {
-      if (inv.isReturn) return;
-      const d = new Date(inv.orderDate);
-      const total = inv.finalTotal || inv.totalAmount || 0;
-      
-      const daySortKey = d.toISOString().split('T')[0]; 
-      const startOfWeek = new Date(d); startOfWeek.setDate(d.getDate() - d.getDay());
-      const weekSortKey = startOfWeek.toISOString().split('T')[0];
-      const monthSortKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      const yearKey = d.getFullYear().toString();
-
-      if (!dailyMap[daySortKey]) dailyMap[daySortKey] = { label: d.toLocaleDateString('en-GB'), total: 0 };
-      dailyMap[daySortKey].total += total;
-      if (!weeklyMap[weekSortKey]) weeklyMap[weekSortKey] = { label: `Week of ${startOfWeek.toLocaleDateString('en-GB')}`, total: 0 };
-      weeklyMap[weekSortKey].total += total;
-      if (!monthlyMap[monthSortKey]) monthlyMap[monthSortKey] = { label: d.toLocaleString('en-GB', { month: 'short', year: 'numeric' }), total: 0 };
-      monthlyMap[monthSortKey].total += total;
-      if (!yearlyMap[yearKey]) yearlyMap[yearKey] = { label: yearKey, total: 0 };
-      yearlyMap[yearKey].total += total;
-    });
-
-    const toSortedArray = (map) => Object.entries(map).sort((a, b) => b[0].localeCompare(a[0])).map(entry => entry[1]);
-    return { daily: toSortedArray(dailyMap), weekly: toSortedArray(weeklyMap), monthly: toSortedArray(monthlyMap), yearly: toSortedArray(yearlyMap) };
-  }, [invoices]);
-
   const handleLogin = (e) => {
     e.preventDefault();
     if (username === 'admin' && password === '12345') { setIsLoggedIn(true); setLoginError(''); } 
@@ -270,7 +261,7 @@ export default function App() {
 
       <main className="main-content">
         {view === 'home' && (
-          <Dashboard salesStats={salesStats} invoices={invoices} setView={setView} />
+          <Dashboard invoices={dashboardData} setView={setView} />
         )}
         {['products'].includes(view) && (
           <ProductsManager products={products} loadProducts={loadProducts} loadHistory={loadInventoryHistory} setView={setView} />

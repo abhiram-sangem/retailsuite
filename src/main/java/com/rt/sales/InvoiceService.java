@@ -7,6 +7,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,6 +23,8 @@ import com.rt.inventory.ProductRepository;
 import com.rt.inventory.dto.ProductResponse;
 import com.rt.sales.dto.CartItemRequest;
 import com.rt.sales.dto.CreateInvoiceRequest;
+import com.rt.sales.dto.DashboardInvoiceResponse;
+import com.rt.sales.dto.DashboardItemResponse;
 import com.rt.sales.dto.InvoiceItemResponse;
 import com.rt.sales.dto.InvoiceResponse;
 import com.rt.sales.dto.ReturnInvoiceRequest;
@@ -53,6 +57,35 @@ public class InvoiceService {
         return invoiceRepository.findAll().stream()
                 .map(this::toResponse)
                 .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public Page<InvoiceResponse> getPagedInvoices(String search, LocalDateTime startDate, LocalDateTime endDate, Pageable pageable) {
+        Page<Invoice> invoicePage = invoiceRepository.findFilteredInvoices(search, startDate, endDate, pageable);
+        return invoicePage.map(this::toResponse);
+    }
+
+    // --- NEW: LIGHTWEIGHT DASHBOARD MAPPER ---
+    @Transactional(readOnly = true)
+    public List<DashboardInvoiceResponse> getDashboardData(LocalDateTime startDate, LocalDateTime endDate) {
+        List<Invoice> invoices = invoiceRepository.findByOrderDateBetween(startDate, endDate);
+        
+        return invoices.stream().map(inv -> {
+            List<DashboardItemResponse> items = inv.getItems().stream()
+                .map(item -> new DashboardItemResponse(
+                    item.getProduct() != null ? item.getProduct().getName() : "Unknown Product",
+                    item.getQuantity()
+                )).collect(Collectors.toList());
+                
+            return new DashboardInvoiceResponse(
+                inv.getId(),
+                inv.getOrderDate(),
+                inv.getFinalTotal() != null ? inv.getFinalTotal() : inv.getGrossTotal(),
+                inv.getIsReturn(),
+                inv.getPaymentMethod(),
+                items
+            );
+        }).collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
@@ -384,7 +417,7 @@ public class InvoiceService {
                 p.getScheduledPrice(),
                 p.getScheduledPiecePurchasePrice(),
                 p.getScheduledPieceMrp(),
-                p.getScheduledPiecePrice());;
+                p.getScheduledPiecePrice());
 
         return new InvoiceItemResponse(
                 item.getId(),

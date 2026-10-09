@@ -18,6 +18,10 @@ export default function SalesManager({
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(20);
 
+  // --- NEW: SERVER-SIDE PAGINATION STATE ---
+  const [serverInvoices, setServerInvoices] = useState([]);
+  const [totalServerItems, setTotalServerItems] = useState(0);
+
   const [showAddProductModal, setShowAddProductModal] = useState(false);
   const [returnSaleData, setReturnSaleData] = useState(null);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
@@ -76,10 +80,116 @@ export default function SalesManager({
     localStorage.setItem('salesDrafts', JSON.stringify(drafts));
   }, [drafts]);
 
+  // Reset to page 1 whenever search or filters change
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, dateFilterRange, startDate, endDate, itemsPerPage]);
 
+  // --- NEW: SERVER-SIDE FETCHING ENGINE ---
+  const fetchServerInvoices = () => {
+    let start = '';
+    let end = '';
+    const today = new Date();
+
+    if (dateFilterRange === 'today') {
+      start = today.toISOString().split('T')[0];
+      end = start;
+    } else if (dateFilterRange === 'week') {
+      const lastWeek = new Date(today);
+      lastWeek.setDate(lastWeek.getDate() - 7);
+      start = lastWeek.toISOString().split('T')[0];
+      end = today.toISOString().split('T')[0];
+    } else if (dateFilterRange === 'month') {
+      const lastMonth = new Date(today);
+      lastMonth.setDate(lastMonth.getDate() - 30);
+      start = lastMonth.toISOString().split('T')[0];
+      end = today.toISOString().split('T')[0];
+    } else if (dateFilterRange === 'year') {
+      start = `${today.getFullYear()}-01-01`;
+      end = today.toISOString().split('T')[0];
+    } else if (dateFilterRange === 'custom') {
+      start = startDate;
+      end = endDate;
+    }
+
+    // Calls the new paginated Spring Boot API!
+    invoiceService.getPagedInvoices(currentPage - 1, itemsPerPage, searchQuery, start, end)
+      .then(data => {
+        setServerInvoices(data.content || []);
+        setTotalServerItems(data.totalElements || 0);
+      })
+      .catch(err => console.error("Pagination fetch error:", err));
+  };
+
+  // Trigger server fetch whenever we are on the list view and dependencies change
+  useEffect(() => {
+    if (view === 'invoices') {
+      // Small debounce so fast typing doesn't spam the server
+      const timeoutId = setTimeout(() => fetchServerInvoices(), 300);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [view, currentPage, itemsPerPage, searchQuery, dateFilterRange, startDate, endDate]);
+
+  // --- BARCODE SCANNER LISTENER ---
+  useEffect(() => {
+    // Only listen for barcode scans when on the main Sales List / Cart view
+    if (view !== 'list') return;
+
+    let barcodeBuffer = '';
+    let barcodeTimeout = null;
+
+    const handleKeyDown = (e) => {
+      // Ignore if the user is typing inside an input field (like Customer Search or Add Product Modal)
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+      // When the scanner finishes, it sends an 'Enter' key
+      if (e.key === 'Enter') {
+        if (barcodeBuffer.length > 2) {
+          // 1. Search the products array for an exact barcode match
+          const scannedProduct = products.find(p => p.barcode === barcodeBuffer || formatProductId(p.id) === barcodeBuffer);
+          
+          if (scannedProduct) {
+            addToCart(scannedProduct);
+            // Play a soft success 'beep' using the browser's native Audio API
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // High pitch A5
+            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            oscillator.start();
+            oscillator.stop(audioCtx.currentTime + 0.1);
+          } else {
+            window.alert(`Barcode "${barcodeBuffer}" not found in inventory.`);
+          }
+        }
+        barcodeBuffer = ''; // Reset the buffer after Enter
+        return;
+      }
+
+      // If it's a normal character, add it to the buffer
+      if (e.key.length === 1) {
+        barcodeBuffer += e.key;
+
+        // Scanners type fast (usually < 30ms per character). 
+        // If typing stops for 50ms without hitting Enter, clear the buffer (it was probably a human typing, not a scanner)
+        clearTimeout(barcodeTimeout);
+        barcodeTimeout = setTimeout(() => {
+          barcodeBuffer = '';
+        }, 50);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      clearTimeout(barcodeTimeout);
+    };
+  }, [view, products, activeTab]); // Dependencies ensure we add to the correct activeTab cart
+
+  
   // --- UTILS & MATH ---
   const isWithinDateRange = (dateInput) => {
     if (!dateInput) return false;
@@ -204,12 +314,7 @@ export default function SalesManager({
     (c.city && c.city.toLowerCase().includes(safeCustomerSearch))
   );
 
-  const filteredInvoices = invoices.filter(i =>
-    ((i.customerName && i.customerName.toLowerCase().includes(safeSearch)) || 
-    formatInvoiceId(i.id).toLowerCase().includes(safeSearch)) &&
-    isWithinDateRange(i.orderDate)
-  );
-
+  // Edit history still uses local filtering for now
   const filteredInvoiceHistory = invoiceHistory.filter(log => 
     ((log.customerName && log.customerName.toLowerCase().includes(safeSearch)) ||
     formatInvoiceId(log.originalInvoiceId).toLowerCase().includes(safeSearch)) &&
@@ -218,8 +323,6 @@ export default function SalesManager({
 
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  
-  const paginatedInvoices = filteredInvoices.slice(indexOfFirstItem, indexOfLastItem);
   const paginatedInvoiceHistory = filteredInvoiceHistory.slice(indexOfFirstItem, indexOfLastItem);
 
   // --- EVENT HANDLERS ---
@@ -329,7 +432,6 @@ export default function SalesManager({
     setView('payment-screen');
   }
 
-  // Skips the Invoice Details screen and directly opens the print dialog while staying on the New Sale screen
   function submitFinalSale(isDirectPayLater = false) {
     if (!activeTab.cart.length) return window.alert('Cart is empty.');
     if (!activeTab.activeCustomer) return window.alert('Please select a customer before submitting.');
@@ -351,6 +453,7 @@ export default function SalesManager({
       ).then(invoice => {
         closeTab(activeTabId, { stopPropagation: () => {} });
         loadProducts(); loadInvoices(); loadHistory(); loadCustomers();
+        if (view === 'invoices') fetchServerInvoices();
         
         invoiceService.getInvoiceById(invoice.id).then(fullInvoice => {
           setSelectedInvoice(fullInvoice);
@@ -371,6 +474,7 @@ export default function SalesManager({
       ).then(invoice => {
         closeTab(activeTabId, { stopPropagation: () => {} });
         loadProducts(); loadInvoices(); loadHistory(); loadCustomers();
+        if (view === 'invoices') fetchServerInvoices();
 
         invoiceService.getInvoiceById(invoice.id).then(fullInvoice => {
           setSelectedInvoice(fullInvoice);
@@ -399,6 +503,17 @@ export default function SalesManager({
   }
 
   function handleEditSale(invoice) {
+    // If the server invoice doesn't have populated items, fetch the full detail first
+    if (!invoice.items || invoice.items.length === 0) {
+      invoiceService.getInvoiceById(invoice.id).then(fullInvoice => {
+        loadEditTab(fullInvoice);
+      });
+    } else {
+      loadEditTab(invoice);
+    }
+  }
+
+  function loadEditTab(invoice) {
     const subtotal = invoice.grossTotal || 0;
     const discountAmt = subtotal * ((invoice.discountPercent || 0) / 100);
     const taxableAmt = subtotal - discountAmt;
@@ -433,11 +548,21 @@ export default function SalesManager({
 
   function handleInitiateReturn(invoice) {
     if (invoice.isReturn) return window.alert("This is already a returned invoice!");
-    setReturnSaleData({
-      ...invoice,
-      returnItems: invoice.items.map(item => ({ ...item, returnQty: 0 }))
-    });
-    setView('return-sale');
+    if (!invoice.items || invoice.items.length === 0) {
+      invoiceService.getInvoiceById(invoice.id).then(fullInvoice => {
+        setReturnSaleData({
+          ...fullInvoice,
+          returnItems: fullInvoice.items.map(item => ({ ...item, returnQty: 0 }))
+        });
+        setView('return-sale');
+      });
+    } else {
+      setReturnSaleData({
+        ...invoice,
+        returnItems: invoice.items.map(item => ({ ...item, returnQty: 0 }))
+      });
+      setView('return-sale');
+    }
   }
 
   function handleReturnAllItems() {
@@ -459,7 +584,9 @@ export default function SalesManager({
     ).then(() => {
       window.alert("Return processed successfully!");
       setReturnSaleData(null);
-      setView('invoices'); loadInvoices(); loadProducts(); loadHistory(); loadCustomers();
+      setView('invoices'); 
+      loadInvoices(); loadProducts(); loadHistory(); loadCustomers();
+      fetchServerInvoices();
     }).catch(err => window.alert("Failed to process return: " + err.message));
   }
 
@@ -648,7 +775,7 @@ export default function SalesManager({
                 {/* COMPACT PROPORTIONAL BILL SUMMARY */}
                 {activeTab.cart.length > 0 && (
                   <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem', marginBottom: '1rem', paddingRight: '1rem' }}>
-                    <div className="receipt-panel shadow-panel" style={{ width: '400px', marginTop: 0, padding: '20px', borderRadius: '12px', border: '1px solid #cbd5e1', backgroundColor: '#f8fafc' }}>
+                    <div className="receipt-panel shadow-panel">
                       <h3 className="receipt-header">Bill Summary</h3>
                       <div className="receipt-summary-header">
                         <span className="fw-bold text-slate">Total Items: {activeTab.cart.length}</span>
@@ -793,7 +920,7 @@ export default function SalesManager({
           </div>
         )}
 
-        {/* --- VIEW: SALES LIST --- */}
+        {/* --- VIEW: SALES LIST (PAGINATED FROM SERVER) --- */}
         {view === 'invoices' && (
           <div className="card">
             <div className="card-header header-actions header-actions-wrap">
@@ -823,7 +950,7 @@ export default function SalesManager({
                   </tr>
                 </thead>
                 <tbody>
-                  {paginatedInvoices.length ? paginatedInvoices.map(invoice => (
+                  {serverInvoices.length ? serverInvoices.map(invoice => (
                     <tr 
                       key={invoice.id} 
                       className="product-row available"
@@ -857,7 +984,7 @@ export default function SalesManager({
                 </tbody>
               </table>
             </div>
-            <Pagination totalItems={filteredInvoices.length} itemsPerPage={itemsPerPage} setItemsPerPage={setItemsPerPage} currentPage={currentPage} setCurrentPage={setCurrentPage} />
+            <Pagination totalItems={totalServerItems} itemsPerPage={itemsPerPage} setItemsPerPage={setItemsPerPage} currentPage={currentPage} setCurrentPage={setCurrentPage} />
           </div>
         )}
 

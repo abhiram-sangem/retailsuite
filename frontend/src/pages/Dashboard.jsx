@@ -1,11 +1,23 @@
 import React, { useState, useMemo } from 'react';
-import { formatMoney, formatInvoiceId } from '../utils/formatters';
+import { formatMoney } from '../utils/formatters';
 import { 
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, 
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
 } from 'recharts';
 
-export default function Dashboard({ invoices = [], setView }) {
+export default function Dashboard({ invoices, setView }) {
+  // Show loading state while App.jsx fetches the data for the first time
+  if (!invoices) {
+    return (
+      <div className="dashboard-wrapper">
+        <div className="card-header header-actions mb-2 pb-1" style={{ borderBottom: '1px solid #e2e8f0' }}>
+          <h2 className="card-title mb-0">Business Intelligence Dashboard</h2>
+        </div>
+        <div className="empty-state">Loading dashboard analytics...</div>
+      </div>
+    );
+  }
+
   // =========================================
   // 1. STATE: INDEPENDENT DATE FILTERS
   // =========================================
@@ -170,7 +182,7 @@ export default function Dashboard({ invoices = [], setView }) {
     globalFiltered.forEach(inv => {
       if (inv.isReturn) return;
       inv.items?.forEach(item => {
-        const name = item.product?.name || 'Unknown';
+        const name = item.name || 'Unknown';
         productCounts[name] = (productCounts[name] || 0) + item.quantity;
       });
     });

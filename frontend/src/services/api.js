@@ -68,71 +68,47 @@ export const invoiceService = {
     fetch(`${API_URL}/api/invoices`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-         customerName, 
-         cartItems: cartItems.map(item => ({ 
-           id: item.id || item.product?.id, 
-           quantity: item.quantity, 
-           price: item.price,
-           sellType: item.sellType || 'Box'
-         })), 
-         grossTotal, discountPercent, cgst, sgst, finalTotal, paymentMethod, orderDate, dueDays, customInvoiceId 
-      }),
-    }).then(async res => {
-      if (!res.ok) throw new Error(await res.text() || 'Invoice creation failed');
-      return res.json();
-    }),
+      body: JSON.stringify({ customerName, cartItems: cartItems.map(item => ({ id: item.id || item.product?.id, quantity: item.quantity, price: item.price, sellType: item.sellType || 'Box' })), grossTotal, discountPercent, cgst, sgst, finalTotal, paymentMethod, orderDate, dueDays, customInvoiceId }),
+    }).then(async res => { if (!res.ok) throw new Error(await res.text() || 'Invoice creation failed'); return res.json(); }),
 
   update: (id, customerName, cartItems, grossTotal, discountPercent, cgst, sgst, finalTotal, paymentMethod, orderDate, dueDays, customInvoiceId) =>
     fetch(`${API_URL}/api/invoices/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-         customerName, 
-         cartItems: cartItems.map(item => ({ 
-           id: item.id || item.product?.id, 
-           quantity: item.quantity, 
-           price: item.price,
-           sellType: item.sellType || 'Box'
-         })), 
-         grossTotal, discountPercent, cgst, sgst, finalTotal, paymentMethod, orderDate, dueDays, customInvoiceId 
-      }),
-    }).then(async res => {
-      if (!res.ok) throw new Error(await res.text() || 'Invoice update failed');
-      return res.json();
-    }),
+      body: JSON.stringify({ customerName, cartItems: cartItems.map(item => ({ id: item.id || item.product?.id, quantity: item.quantity, price: item.price, sellType: item.sellType || 'Box' })), grossTotal, discountPercent, cgst, sgst, finalTotal, paymentMethod, orderDate, dueDays, customInvoiceId }),
+    }).then(async res => { if (!res.ok) throw new Error(await res.text() || 'Invoice update failed'); return res.json(); }),
 
   returnInvoice: (id, cartItems, grossTotal, discountPercent, cgst, sgst, finalTotal) =>
     fetch(`${API_URL}/api/invoices/${id}/return`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-         cartItems: cartItems.map(item => ({ 
-           id: item.id || item.product?.id, 
-           quantity: item.quantity, 
-           price: item.price,
-           sellType: item.sellType || 'Box'
-         })), 
-         grossTotal, discountPercent, cgst, sgst, finalTotal 
-      }),
-    }).then(async res => {
-      if (!res.ok) throw new Error(await res.text() || 'Return processing failed');
-      return res.json();
-    }),
+      body: JSON.stringify({ cartItems: cartItems.map(item => ({ id: item.id || item.product?.id, quantity: item.quantity, price: item.price, sellType: item.sellType || 'Box' })), grossTotal, discountPercent, cgst, sgst, finalTotal }),
+    }).then(async res => { if (!res.ok) throw new Error(await res.text() || 'Return processing failed'); return res.json(); }),
 
   getInvoices: () =>
-    fetch(`${API_URL}/api/invoices`).then(res => {
-      if (!res.ok) throw new Error('Failed to load invoices')
-      return res.json()
-    }),
+    fetch(`${API_URL}/api/invoices`).then(res => { if (!res.ok) throw new Error('Failed to load invoices'); return res.json(); }),
+
+  // --- NEW: LIGHTWEIGHT DASHBOARD ENDPOINT ---
+  getDashboardData: (startDate = '', endDate = '') => {
+    const params = new URLSearchParams();
+    if (startDate) params.append('startDate', startDate);
+    if (endDate) params.append('endDate', endDate);
+    return fetch(`${API_URL}/api/invoices/dashboard?${params.toString()}`)
+      .then(res => { if (!res.ok) throw new Error('Failed to load dashboard stats'); return res.json(); });
+  },
+
+  getPagedInvoices: (page = 0, size = 20, search = '', startDate = '', endDate = '') => {
+    const params = new URLSearchParams({ page: page, size: size });
+    if (search) params.append('search', search);
+    if (startDate) params.append('startDate', startDate);
+    if (endDate) params.append('endDate', endDate);
+    return fetch(`${API_URL}/api/invoices/paged?${params.toString()}`)
+      .then(res => { if (!res.ok) throw new Error('Failed to load paginated invoices'); return res.json(); });
+  },
 
   getInvoiceById: (id) =>
-    fetch(`${API_URL}/api/invoices/${id}`).then(res => {
-      if (!res.ok) throw new Error('Failed to load invoice')
-      return res.json()
-    })
+    fetch(`${API_URL}/api/invoices/${id}`).then(res => { if (!res.ok) throw new Error('Failed to load invoice'); return res.json(); })
 };
-
 export const customerService = {
   getCustomers: () =>
     fetch(`${API_URL}/api/customers`).then(res => {
